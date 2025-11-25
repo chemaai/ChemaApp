@@ -1,15 +1,21 @@
 {
   "expo": {
-    "name": "ChemaApp",
+    "name": "Chema",
     "slug": "ChemaApp",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/Chema_icon.png",
     "scheme": "chemaapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.espinobrian50.ChemaApp",
+      "buildNumber": "1",
+      "infoPlist": {
+        "CFBundleDisplayName": "Chema",
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -43,6 +49,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "7092c563-d80a-4822-b574-00508cf3c5fe"
+      }
     }
   }
 }
