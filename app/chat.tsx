@@ -3,9 +3,40 @@ import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import React, { useEffect, useState } from 'react';
 import { FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import Markdown from 'react-native-markdown-display';
 import AnimatedReanimated, { FadeIn, Easing as ReanimatedEasing, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 import ChemaMenu from './components/ChemaMenu';
+
+const spacingPresets = {
+  cinematic: {
+    paddingTop: 12,
+    paddingBottom: 16,
+    marginBottom: 12,
+  },
+  tight: {
+    paddingTop: 4,
+    paddingBottom: 4,
+    marginBottom: 4,
+  },
+  open: {
+    paddingTop: 16,
+    paddingBottom: 22,
+    marginBottom: 18,
+  },
+  reflective: {
+    paddingTop: 20,
+    paddingBottom: 28,
+    marginBottom: 20,
+  }
+};
+
+function getSpacingStyle(style: string) {
+  return spacingPresets[style as keyof typeof spacingPresets] || spacingPresets.cinematic;
+}
+
+function formatChemaText(raw: string): string {
+  // Preserve all newlines from backend - no preprocessing
+  return raw || '';
+}
 
 const createMessageId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 11)}`;
 
@@ -39,31 +70,70 @@ const PulseDot = ({ color = "black" }) => {
   );
 };
 
+function renderBoldText(content: string) {
+  const parts: React.ReactNode[] = [];
+  const boldPattern = /\*\*(.+?)\*\*/g;
+  let lastIndex = 0;
+  let matchIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = boldPattern.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(content.slice(lastIndex, match.index));
+    }
+    parts.push(
+      <Text key={`bold-${matchIndex}`} style={markdownStyles.strong}>
+        {match[1]}
+      </Text>
+    );
+    lastIndex = match.index + match[0].length;
+    matchIndex += 1;
+  }
+
+  if (lastIndex < content.length) {
+    parts.push(content.slice(lastIndex));
+  }
+
+  return parts.length > 0 ? parts : content;
+}
+
 export function renderFormattedText(text: string) {
+  if (!text) return null;
+
+  // Split into blocks: paragraph breaks (double newlines or sentence end + newline + capital) and numbered list items
+  const blocks = text.split(/(\n\n+)|(?<=[.!?])\n(?=[A-Z])|(?=\n\d+\.\s+[A-Z0-9])/);
+
+  // Remove empty entries
+  const clean = blocks.filter(b => b && b.trim().length > 0);
+
+  // Fix list numbering resets
+  let lastNum = 0;
+  const formattedBlocks = clean.map((block) => {
+    const match = block.match(/^(\d+)\.\s/);
+    if (match) {
+      let num = parseInt(match[1], 10);
+      if (num <= lastNum && lastNum >= 9) {
+        num = lastNum + 1;
+        block = block.replace(/^(\d+)\./, `${num}.`);
+      }
+      lastNum = num;
+    } else {
+      lastNum = 0;
+    }
+    return block.trim();
+  });
+
   return (
-    <Markdown 
-      style={markdownStyles}
-      mergeStyle={false}
-      rules={{
-        paragraph: (node, children, parent, styles) => {
-          return (
-            <Text key={node.key} style={markdownStyles.paragraph}>
-              {children}
-            </Text>
-          );
-        },
-        text: (node, children, parent, styles) => {
-          return (
-            <Text key={node.key} style={markdownStyles.text}>
-              {node.content}
-            </Text>
-          );
-        },
-      }}
-      style={{ whiteSpace: 'pre-wrap' }}
-    >
-      {text}
-    </Markdown>
+    <>
+      {formattedBlocks.map((block, index) => (
+        <React.Fragment key={index}>
+          <Text style={markdownStyles.text}>
+            {renderBoldText(block)}
+          </Text>
+          {index < formattedBlocks.length - 1 && <View style={{ height: 10 }} />}
+        </React.Fragment>
+      ))}
+    </>
   );
 }
 
@@ -101,6 +171,10 @@ export default function ChatScreen() {
   const pulseStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pulseAnim.value }],
   }));
+
+  const handlePdfPress = () => {
+    console.log("PDF button pressed");
+  };
 
   const handleSend = async () => {
     if (sendLock.current) return;
@@ -214,7 +288,7 @@ export default function ChatScreen() {
           }
 
           return (
-            <View style={styles.chemaContainer}>
+            <View style={[styles.chemaContainer, getSpacingStyle((item as any).layoutStyle || "cinematic")]}>
               <MagicWords>
                 {renderFormattedText(item.content)}
               </MagicWords>
@@ -225,9 +299,18 @@ export default function ChatScreen() {
       />
 
       <View style={styles.inputWrapper}>
-        <View style={styles.inputContainer}>
+        <View style={styles.inputRow}>
+          <TouchableOpacity
+            onPress={handlePdfPress}
+            style={styles.pdfButton}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.pdfPlus}>＋</Text>
+          </TouchableOpacity>
+          <View style={styles.inputContainer}>
 
           <TextInput
+            multiline
             style={styles.input}
             placeholder="Lead with Chema"
             placeholderTextColor="rgba(0,0,0,0.30)"
@@ -274,6 +357,7 @@ export default function ChatScreen() {
             </View>
           </TouchableOpacity>
 
+          </View>
         </View>
       </View>
       {showMenu && (
@@ -293,7 +377,10 @@ const markdownStyles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 22,
     color: '#000000',
-    marginBottom: 8,
+    marginBottom: 14,
+  },
+  strong: {
+    fontWeight: '600',
   },
   ordered_list: {
     marginVertical: 0,
@@ -370,25 +457,41 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     backgroundColor: '#FFFFFF',
   },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 0,
+    paddingTop: 4,
+    paddingBottom: 4,
+    marginBottom: -2,
+  },
   inputContainer: {
     position: 'relative',
-    height: 44,
+    flex: 1,
+    minHeight: 44,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.12)',
     borderRadius: 24,
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
+    alignItems: 'stretch',
     paddingLeft: 16,
     paddingRight: 54,
+    marginRight: 4,
   },
   input: {
     fontSize: 16,
     color: '#000000',
+    textAlignVertical: 'top',
+    paddingTop: 10,
+    paddingBottom: 10,
+    flexShrink: 1,
+    marginTop: 2,
   },
   sendButton: {
     position: 'absolute',
     right: 8,
-    top: 4,
+    bottom: 4,
   },
   sendCircle: {
     width: 34,
@@ -397,5 +500,21 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  pdfButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+  },
+  pdfPlus: {
+    fontSize: 20,
+    color: 'rgba(0,0,0,0.4)',
+    marginTop: -1,
   },
 });

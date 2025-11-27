@@ -36,8 +36,8 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
+          "image": "./assets/images/flower.png",
+          "imageWidth": 100,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",
           "dark": {
@@ -55,6 +55,12 @@
       "eas": {
         "projectId": "7092c563-d80a-4822-b574-00508cf3c5fe"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/7092c563-d80a-4822-b574-00508cf3c5fe"
     }
   }
 }
