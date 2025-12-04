@@ -122,7 +122,7 @@ const styles = StyleSheet.create({
   },
   logoContainer: {
     position: 'absolute',
-    top: SCREEN_HEIGHT * 0.22,
+    top: SCREEN_HEIGHT * 0.22 + 65,
     width: '100%',
     alignItems: 'center',
     zIndex: 1,
@@ -134,7 +134,7 @@ const styles = StyleSheet.create({
   },
   textContainer: {
     position: 'absolute',
-    top: SCREEN_HEIGHT * 0.525,
+    top: SCREEN_HEIGHT * 0.525 + 65,
     width: '100%',
     alignItems: 'center',
     zIndex: 1,
@@ -164,7 +164,7 @@ const styles = StyleSheet.create({
   },
   footerText: {
     position: 'absolute',
-    bottom: 1,
+    bottom: 1 + 26,
     width: '100%',
     fontSize: 12,
     color: '#666666',

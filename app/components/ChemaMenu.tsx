@@ -1,8 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
+import { router } from 'expo-router';
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import AnimatedReanimated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import { useAuthContext } from '../../context/AuthContext';
 import AboutScreen from '../about';
 import ContactScreen from '../contact';
 import MissionScreen from '../mission';
@@ -13,6 +15,7 @@ interface ChemaMenuProps {
 }
 
 export default function ChemaMenu({ onClose }: ChemaMenuProps) {
+  const { user, session } = useAuthContext() as { user: { id?: string; email?: string } | null; session: any; loading: boolean };
   const [activeScreen, setActiveScreen] = useState<'about' | 'mission' | 'founder' | 'contact' | null>(null);
 
   const handleOpenScreen = (screen: 'about' | 'mission' | 'founder' | 'contact') => {
@@ -23,14 +26,17 @@ export default function ChemaMenu({ onClose }: ChemaMenuProps) {
     setActiveScreen(null);
   };
 
-  const menuItems = [
+  const isLoggedIn = !!user?.email;
+
+  const baseMenuItems = [
     'About',
     'Mission',
     'The Founder',
     'Contact Us',
-    'Sign Up / Log In',
-    'Log Out',
   ];
+
+  const authMenuItem = isLoggedIn ? 'My Account' : 'Sign Up / Log In';
+  const menuItems = [...baseMenuItems, authMenuItem];
 
   return (
     <AnimatedReanimated.View
@@ -76,7 +82,7 @@ export default function ChemaMenu({ onClose }: ChemaMenuProps) {
 
           <View style={styles.menuItemsContainer}>
             {menuItems.map((item, index) => {
-              const handlePress = () => {
+              const handlePress = async () => {
                 if (item === 'About') {
                   handleOpenScreen('about');
                 } else if (item === 'Mission') {
@@ -85,6 +91,14 @@ export default function ChemaMenu({ onClose }: ChemaMenuProps) {
                   handleOpenScreen('founder');
                 } else if (item === 'Contact Us') {
                   handleOpenScreen('contact');
+                } else if (item === 'Sign Up / Log In') {
+                  router.push('/auth/Login');
+                  onClose();
+                  return;
+                } else if (item === 'My Account') {
+                  router.push('/MyAccount');
+                  onClose();
+                  return;
                 } else {
                   onClose();
                 }

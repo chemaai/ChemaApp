@@ -1,10 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as DocumentPicker from 'expo-document-picker';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import React, { useEffect, useState } from 'react';
-import { FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { FlatList, Keyboard, KeyboardAvoidingView, Linking, Platform, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import AnimatedReanimated, { FadeIn, Easing as ReanimatedEasing, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
+import { useAuthContext } from '../context/AuthContext';
+import { useColorScheme } from '../hooks/use-color-scheme';
+import { getOrCreateUserId } from '../utils/identity';
 import ChemaMenu from './components/ChemaMenu';
+import UpgradeModal from './components/UpgradeModal';
 
 const spacingPresets = {
   cinematic: {
@@ -97,7 +102,7 @@ function renderBoldText(content: string) {
   return parts.length > 0 ? parts : content;
 }
 
-export function renderFormattedText(text: string) {
+export function renderFormattedText(text: string, isDark: boolean = false) {
   if (!text) return null;
 
   // Split into blocks: paragraph breaks (double newlines or sentence end + newline + capital) and numbered list items
@@ -127,7 +132,7 @@ export function renderFormattedText(text: string) {
     <>
       {formattedBlocks.map((block, index) => (
         <React.Fragment key={index}>
-          <Text style={markdownStyles.text}>
+          <Text style={[markdownStyles.text, { color: isDark ? '#FFFFFF' : '#000000' }]}>
             {renderBoldText(block)}
           </Text>
           {index < formattedBlocks.length - 1 && <View style={{ height: 10 }} />}
@@ -149,10 +154,16 @@ const MagicWords = ({ children }: { children: React.ReactNode }) => {
 };
 
 export default function ChatScreen() {
+  const { user, session } = useAuthContext() as { user: { id?: string } | null; session: any; loading: boolean };
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<{ role: 'user' | 'assistant'; content: string; id?: string }[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [checkoutUrl, setCheckoutUrl] = useState('');
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const sendLock = React.useRef(false);
   const pulseAnim = useSharedValue(0.95);
 
@@ -168,12 +179,123 @@ export default function ChatScreen() {
     }
   }, [isLoading]);
 
+  useEffect(() => {
+    const showSubscription = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => setKeyboardVisible(true)
+    );
+    const hideSubscription = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKeyboardVisible(false)
+    );
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
+
   const pulseStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pulseAnim.value }],
   }));
 
-  const handlePdfPress = () => {
-    console.log("PDF button pressed");
+  const handlePdfPress = async () => {
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      const result = await DocumentPicker.getDocumentAsync({
+        type: "application/pdf",
+        multiple: false,
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      await uploadPdf(asset);
+
+    } catch (err) {
+      console.error("PDF Picker Error:", err);
+    }
+  };
+
+  const uploadPdf = async (file: any) => {
+    try {
+      // 1. Insert permanent PDF message BEFORE calling backend
+      const pdfMessage = {
+        id: createMessageId(),
+        role: "user" as const,
+        type: "pdf",
+        name: file.name || "document.pdf",
+        uri: file.uri,
+        content: `PDF Uploaded: ${file.name || "document.pdf"}`,
+      };
+      setMessages((prev) => [...prev, pdfMessage]);
+
+      // 2. Convert URI to blob
+      const response = await fetch(file.uri);
+      const blob = await response.blob();
+
+      // 3. Build form data
+      const formData = new FormData();
+      formData.append("file", {
+        uri: file.uri,
+        name: file.name || "document.pdf",
+        type: file.mimeType || "application/pdf",
+      } as any);
+
+      // 4. Trigger Chema typing indicator
+      setIsLoading(true);
+
+      // 5. Send to backend (NO CONTENT-TYPE HEADER!!)
+      const userId = await getOrCreateUserId();
+      const res = await fetch("https://chema-00yh.onrender.com/analyze_pdf", {
+        method: "POST",
+        headers: {
+          "X-User-ID": userId,
+        },
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      // Check for upgrade_required error
+      if (data.error === "upgrade_required") {
+        setCheckoutUrl(data.url || "");
+        setShowUpgradeModal(true);
+        setIsLoading(false);
+        return;
+      }
+
+      // 6. Push Chema's reply as a normal assistant message (PDF message stays in array)
+      const assistantMessage = {
+        role: "assistant" as const,
+        content: data.reply || "Chema couldn't read this PDF.",
+        id: createMessageId(),
+      };
+      setMessages((prev) => {
+        const withoutThinking = prev.filter(m => m.content !== "__thinking__");
+        return [...withoutThinking, assistantMessage];
+      });
+
+      setIsLoading(false);
+
+    } catch (err) {
+      console.error("UPLOAD ERROR:", err);
+
+      const errorMessage = {
+        role: "assistant" as const,
+        content: "There was an error processing that PDF.",
+        id: createMessageId(),
+      };
+      setMessages((prev) => {
+        const withoutThinking = prev.filter(m => m.content !== "__thinking__");
+        return [...withoutThinking, errorMessage];
+      });
+
+      setIsLoading(false);
+    }
   };
 
   const handleSend = async () => {
@@ -202,9 +324,13 @@ export default function ChatScreen() {
     console.log("CHEMA → sending request");
 
     try {
+      const userId = await getOrCreateUserId();
       const response = await fetch("https://chema-00yh.onrender.com/api/ask", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-User-ID": userId,
+        },
         body: JSON.stringify({
           question: userInput,
           messages: [...messages, userMessage].map(m => ({
@@ -212,6 +338,7 @@ export default function ChatScreen() {
             content: m.content,
             id: m.id || Date.now().toString()
           })),
+          user_id: userId,
         }),
       });
 
@@ -223,6 +350,16 @@ export default function ChatScreen() {
 
       const data = await response.json();
       console.log("BACKEND RAW RESPONSE →", data);
+      
+      // Check for upgrade_required error
+      if (data.error === "upgrade_required") {
+        setCheckoutUrl(data.url || "");
+        setShowUpgradeModal(true);
+        setIsLoading(false);
+        sendLock.current = false;
+        return;
+      }
+      
       const replyText = data.reply || "Ready when you are — clarity starts with conversation.";
       const assistantMessage = {
         role: 'assistant' as const,
@@ -255,42 +392,71 @@ export default function ChatScreen() {
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={styles.container}
+      style={[styles.container, { backgroundColor: isDark ? '#0D0D0D' : 'white' }]}
     >
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: isDark ? '#0D0D0D' : 'transparent' }]}>
         <Pressable onPress={() => setShowMenu(true)}>
-          <Text style={styles.headerTitle}>Chema</Text>
+          <Text style={[styles.headerTitle, { color: isDark ? '#FFFFFF' : '#000' }]}>Chema</Text>
         </Pressable>
       </View>
       <FlatList
         data={
           isLoading
-            ? [...messages, { role: 'assistant', content: '__thinking__', id: 'thinking-dot' }]
-            : messages
+            ? [...messages.filter(m => (m as any).type !== 'pdf_upload'), { role: 'assistant', content: '__thinking__', id: 'thinking-dot' }]
+            : messages.filter(m => (m as any).type !== 'pdf_upload')
         }
         keyExtractor={(item) => item.id!}
         renderItem={({ item }) => {
           if (item.content === '__thinking__') {
             return (
               <View style={{ alignSelf: 'flex-start', paddingLeft: 20, paddingVertical: 10 }}>
-                <PulseDot color="black" />
+                <PulseDot color={isDark ? "#FFFFFF" : "black"} />
               </View>
             );
           }
 
+          // Ignore pdf_upload messages (they should not show raw text)
+          if ((item as any).type === 'pdf_upload') {
+            return null;
+          }
+
           // keep existing user + assistant bubble logic
           if (item.role === 'user') {
+            // Render PDF message with icon and open action
+            if ((item as any).type === 'pdf') {
+              return (
+                <View style={[styles.pdfBubble, { backgroundColor: isDark ? '#0a0a0a' : '#FFFFFF', borderColor: isDark ? '#2a2a2a' : 'rgba(0,0,0,0.1)' }]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Ionicons name="document-text" size={20} color={isDark ? "#FFFFFF" : "#000"} style={{ marginRight: 8 }} />
+                    <Text style={[styles.userText, { color: isDark ? '#FFFFFF' : '#000' }]}>{(item as any).name || "document.pdf"}</Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => {
+                      const uri = (item as any).uri;
+                      if (uri) {
+                        Linking.openURL(uri).catch(err => console.error("Failed to open PDF:", err));
+                      }
+                    }}
+                    style={{ marginTop: 8 }}
+                  >
+                    <Text style={{ fontSize: 14, color: isDark ? 'rgba(255,255,255,0.50)' : '#666', textDecorationLine: 'underline' }}>
+                      Open PDF
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            }
             return (
-              <View style={styles.userBubble}>
-                <Text style={styles.userText}>{item.content}</Text>
+              <View style={[styles.userBubble, { backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF', borderColor: isDark ? '#3A3A3A' : '#D9D9D9' }]}>
+                <Text style={[styles.userText, { color: isDark ? '#FFFFFF' : '#000' }]}>{item.content}</Text>
               </View>
             );
           }
 
           return (
-            <View style={[styles.chemaContainer, getSpacingStyle((item as any).layoutStyle || "cinematic")]}>
+            <View style={[styles.chemaContainer, getSpacingStyle((item as any).layoutStyle || "cinematic"), isDark && { backgroundColor: 'transparent', borderWidth: 0, borderColor: 'transparent', shadowColor: 'transparent', elevation: 0 }]}>
               <MagicWords>
-                {renderFormattedText(item.content)}
+                {renderFormattedText(item.content, isDark)}
               </MagicWords>
             </View>
           );
@@ -298,22 +464,22 @@ export default function ChatScreen() {
         contentContainerStyle={styles.listContent}
       />
 
-      <View style={styles.inputWrapper}>
+      <View style={[styles.inputWrapper, { backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF' }, !keyboardVisible && { marginBottom: Platform.OS === "ios" ? 16 : 12 }]}>
         <View style={styles.inputRow}>
           <TouchableOpacity
             onPress={handlePdfPress}
-            style={styles.pdfButton}
+            style={[styles.pdfButton, { backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF', borderColor: isDark ? '#3A3A3A' : 'rgba(0,0,0,0.12)' }]}
             activeOpacity={0.7}
           >
-            <Text style={styles.pdfPlus}>＋</Text>
+            <Text style={[styles.pdfPlus, { color: isDark ? 'rgba(255,255,255,0.50)' : 'rgba(0,0,0,0.4)' }]}>＋</Text>
           </TouchableOpacity>
-          <View style={styles.inputContainer}>
+          <View style={[styles.inputContainer, { backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF', borderColor: isDark ? '#3A3A3A' : 'rgba(0,0,0,0.12)' }]}>
 
           <TextInput
             multiline
-            style={styles.input}
+            style={[styles.input, { color: isDark ? '#FFFFFF' : '#000000' }]}
             placeholder="Lead with Chema"
-            placeholderTextColor="rgba(0,0,0,0.30)"
+            placeholderTextColor={isDark ? "rgba(255,255,255,0.50)" : "rgba(0,0,0,0.30)"}
             value={input}
             onChangeText={setInput}
             onSubmitEditing={handleSend}
@@ -362,6 +528,12 @@ export default function ChatScreen() {
       </View>
       {showMenu && (
         <ChemaMenu onClose={() => setShowMenu(false)} />
+      )}
+      {showUpgradeModal && (
+        <UpgradeModal
+          checkoutUrl={checkoutUrl}
+          onClose={() => setShowUpgradeModal(false)}
+        />
       )}
     </KeyboardAvoidingView>
   );
@@ -416,7 +588,8 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: 58,
+    paddingTop: 8,
     zIndex: 10,
     backgroundColor: 'transparent',
   },
@@ -432,10 +605,28 @@ const styles = StyleSheet.create({
   },
   userBubble: {
     alignSelf: 'flex-end',
-    backgroundColor: '#F3F3F3',
-    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#D9D9D9',
+    borderRadius: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 2,
+    elevation: 1,
+    maxWidth: '75%',
+    marginBottom: 16
+  },
+  pdfBubble: {
+    alignSelf: 'flex-end',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.1)',
+    borderRadius: 16,
+    paddingVertical: 14,
     paddingHorizontal: 16,
-    paddingVertical: 12,
     maxWidth: '75%',
     marginBottom: 16
   },
@@ -445,7 +636,9 @@ const styles = StyleSheet.create({
   },
   chemaContainer: {
     alignSelf: 'flex-start',
-    marginBottom: 16
+    marginBottom: 16,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
   },
   chemaText: {
     fontSize: 16,
