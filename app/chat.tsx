@@ -730,6 +730,10 @@ export default function ChatScreen() {
           isOpen={showHilo}
           onClose={() => setShowHilo(false)}
           isDark={isDark}
+          hiloTitle={(() => {
+            const firstUserMsg = messages.find(m => m.role === 'user');
+            return firstUserMsg ? firstUserMsg.content.substring(0, 10) : '';
+          })()}
         />
       )}
     </AnimatedReanimated.View>

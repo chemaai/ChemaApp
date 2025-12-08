@@ -11,7 +11,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.espinobrian50.ChemaApp",
-      "buildNumber": "1",
+      "buildNumber": "2",
       "infoPlist": {
         "CFBundleDisplayName": "Chema",
         "ITSAppUsesNonExemptEncryption": false
@@ -67,4 +67,3 @@
     }
   }
 }
-
