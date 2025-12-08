@@ -4,9 +4,8 @@ import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import React from 'react';
 import { Dimensions, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import AnimatedReanimated, { FadeInUp, FadeOutUp } from 'react-native-reanimated';
 import { useColorScheme } from '../../hooks/use-color-scheme';
-import { supabase } from '../../lib/supabase';
-import { getOrCreateUserId } from '../../utils/identity';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -15,20 +14,14 @@ export default function AccountScreen() {
   const isDark = colorScheme === 'dark';
   const { user, userProfile, logout } = useAuthContext() as unknown as {
     user: { id?: string; email?: string } | null;
-    userProfile: any;
+    userProfile: { plan?: string; stripe_customer_id?: string } | null;
     logout: () => Promise<void>;
   };
   
-  const handleLogoutPress = async () => {
-    try {
-      await logout();
-      router.back(); // go back after logout
-    } catch (err) {
-      console.error('Logout press error:', err);
-    }
-  };
-  
-  const userEmail = user?.email || 'Anonymous';
+  const userEmail = user?.email || 'Not signed in';
+  const userPlan = userProfile?.plan || 'free';
+  const displayPlan = userPlan.charAt(0).toUpperCase() + userPlan.slice(1);
+  const hasStripeSubscription = !!userProfile?.stripe_customer_id;
   
   const handleManageSubscription = async () => {
     console.log('🔵 Manage Subscription button clicked');
@@ -39,107 +32,34 @@ export default function AccountScreen() {
       return;
     }
     
+    if (!userProfile?.stripe_customer_id) {
+      alert('No active subscription found.');
+      return;
+    }
+    
     try {
-      const deviceId = await getOrCreateUserId();
-      let stripeCustomerId = null;
+      console.log('🔵 Sending portal request for user:', user.id);
       
-      console.log('🔵 Getting Stripe customer ID from public.users...');
-      console.log('🔵 Device ID:', deviceId);
-      console.log('🔵 Supabase user ID:', user?.id);
-      
-      // Query public.users - get ALL records and find the one WITH stripe_customer_id
-      // Don't use .single() because there might be multiple rows (old one with stripe, new "free" one)
-      if (user?.id) {
-        console.log('🔵 Querying by supabase_user_id...');
-        const { data: records, error } = await supabase
-          .from('users')
-          .select('id, device_id, supabase_user_id, plan, stripe_customer_id')
-          .eq('supabase_user_id', user.id);
-        
-        console.log('🟢 Query result:', JSON.stringify({ records, error }, null, 2));
-        
-        if (records && records.length > 0) {
-          // Find the record that HAS a stripe_customer_id (not null)
-          const recordWithStripe = records.find((r: any) => r.stripe_customer_id);
-          if (recordWithStripe?.stripe_customer_id) {
-            stripeCustomerId = recordWithStripe.stripe_customer_id;
-            console.log('✅ Found Stripe customer ID:', stripeCustomerId);
-          } else {
-            console.log('⚠️ No record with Stripe customer ID found');
-            console.log('⚠️ All records:', records);
-          }
-        }
-      }
-      
-      // Also try device_id if supabase_user_id didn't work
-      if (!stripeCustomerId) {
-        console.log('🔵 Querying by device_id...');
-        const { data: records, error } = await supabase
-          .from('users')
-          .select('id, device_id, supabase_user_id, plan, stripe_customer_id')
-          .eq('device_id', deviceId);
-        
-        console.log('🟢 Device query result:', JSON.stringify({ records, error }, null, 2));
-        
-        if (records && records.length > 0) {
-          const recordWithStripe = records.find((r: any) => r.stripe_customer_id);
-          if (recordWithStripe?.stripe_customer_id) {
-            stripeCustomerId = recordWithStripe.stripe_customer_id;
-            console.log('✅ Found Stripe customer ID by device_id:', stripeCustomerId);
-          }
-        }
-      }
-      
-      if (!stripeCustomerId) {
-        console.log('🔴 Could not find Stripe customer ID in public.users');
-        alert('Could not find your subscription. Please contact support.');
-        return;
-      }
-      
-      // Now send the Stripe customer ID to backend
-      console.log('🔵 Sending Stripe customer ID to backend:', stripeCustomerId);
-      
-      let response = await fetch(
+      const response = await fetch(
         'https://chema-00yh.onrender.com/stripe/create-portal-session',
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'X-User-ID': userProfile?.id || deviceId,
+            'X-User-ID': user.id,
           },
-          body: JSON.stringify({
-            user_id: userProfile?.id || deviceId,
-            stripe_customer_id: stripeCustomerId, // Send the Stripe customer ID we found
-          }),
+          body: JSON.stringify({}),
         }
       );
       
-      let data = await response.json();
+      const data = await response.json();
       console.log('🟢 Portal response:', JSON.stringify(data, null, 2));
       console.log('🟢 Response status:', response.status);
       
       if (!response.ok) {
         const errorMsg = data.error?.message || data.message || data.error || 'Failed to create portal session';
-        console.error('🔴 Portal error details:', {
-          status: response.status,
-          statusText: response.statusText,
-          error: data.error,
-          message: data.message,
-          fullResponse: data
-        });
-        
-        // User-friendly error message
-        if (errorMsg.includes('0 rows') || errorMsg.includes('PGRST116')) {
-          alert(
-            'No subscription found.\n\n' +
-            'This might happen if:\n' +
-            '• Your device ID changed\n' +
-            '• You subscribed with a different account\n\n' +
-            'Please contact support to link your subscription.'
-          );
-        } else {
-          alert(`Error: ${errorMsg}`);
-        }
+        console.error('🔴 Portal error:', errorMsg);
+        alert(`Error: ${errorMsg}`);
         return;
       }
       
@@ -152,14 +72,16 @@ export default function AccountScreen() {
       }
     } catch (err: any) {
       console.error('🔴 Portal session error:', err);
-      console.error('🔴 Error stack:', err.stack);
-      console.error('🔴 Full error:', JSON.stringify(err, null, 2));
-      alert(`Error: ${err.message || 'Failed to connect to server'}\n\nCheck console for details.`);
+      alert(`Error: ${err.message || 'Failed to connect to server'}`);
     }
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF' }}>
+    <AnimatedReanimated.View
+      entering={FadeInUp.duration(350)}
+      exiting={FadeOutUp.duration(250)}
+      style={{ flex: 1, backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF' }}
+    >
       <TouchableOpacity
         style={styles.closeButton}
         onPress={() => router.back()}
@@ -207,34 +129,45 @@ export default function AccountScreen() {
           </Text>
         </View>
 
-        <TouchableOpacity
-          style={[
-            styles.button,
-            {
-              backgroundColor: '#F1F1F1',
-              borderWidth: 1,
-              borderColor: '#D9D9D9',
-              height: 48,
-              borderRadius: 14,
-              justifyContent: 'center',
-              alignItems: 'center',
-            },
-          ]}
-          onPress={handleManageSubscription}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.buttonText, { color: colorScheme === 'dark' ? '#FFF' : '#000' }]}>
-            Manage Subscription
+        <View style={styles.infoSection}>
+          <Text style={[styles.label, { color: isDark ? 'rgba(255,255,255,0.60)' : 'rgba(0,0,0,0.60)' }]}>
+            Plan
           </Text>
-        </TouchableOpacity>
+          <Text style={[styles.value, { color: isDark ? '#FFFFFF' : '#000000' }]}>
+            {displayPlan}
+          </Text>
+        </View>
+
+        {hasStripeSubscription && (
+          <TouchableOpacity
+            style={[
+              styles.button,
+              {
+                backgroundColor: isDark ? '#0D0D0D' : '#F1F1F1',
+                borderWidth: 1,
+                borderColor: isDark ? '#555555' : '#D9D9D9',
+                height: 48,
+                borderRadius: 14,
+                justifyContent: 'center',
+                alignItems: 'center',
+              },
+            ]}
+            onPress={handleManageSubscription}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.buttonText, { color: isDark ? '#FFFFFF' : '#000000' }]}>
+              Manage Subscription
+            </Text>
+          </TouchableOpacity>
+        )}
 
         <TouchableOpacity
           style={[
             styles.button,
             {
-              backgroundColor: '#F1F1F1',
-              borderWidth: 1,
-              borderColor: '#D9D9D9',
+              backgroundColor: '#1A1A1A',
+              borderWidth: 0,
+              borderColor: 'transparent',
               height: 48,
               borderRadius: 14,
               justifyContent: 'center',
@@ -248,22 +181,21 @@ export default function AccountScreen() {
             try {
               await logout();
               console.log('🟢 Logout completed successfully');
-              router.replace('/'); // navigate to home
+              router.replace('/');
             } catch (error) {
               console.error('🔴 Logout failed:', error);
-              // Still navigate even if logout had issues
               router.replace('/');
             }
           }}
           activeOpacity={0.7}
         >
-          <Text style={[styles.buttonText, { color: colorScheme === 'dark' ? '#FFF' : '#000' }]}>
+          <Text style={[styles.buttonText, { color: '#FFFFFF' }]}>
             Log Out
           </Text>
         </TouchableOpacity>
       </View>
       </ScrollView>
-    </View>
+    </AnimatedReanimated.View>
   );
 }
 
@@ -331,4 +263,3 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 });
-

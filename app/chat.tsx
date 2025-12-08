@@ -1,14 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
+import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { FlatList, Keyboard, KeyboardAvoidingView, Linking, Platform, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import AnimatedReanimated, { FadeIn, Easing as ReanimatedEasing, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import AnimatedReanimated, { cancelAnimation, FadeIn, Easing as ReanimatedEasing, runOnJS, useAnimatedStyle, useSharedValue, withDelay, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
 import { useAuthContext } from '../context/AuthContext';
 import { useColorScheme } from '../hooks/use-color-scheme';
-import { getOrCreateUserId } from '../utils/identity';
 import ChemaMenu from './components/ChemaMenu';
+import HiloDrawer, { DRAWER_WIDTH } from './components/HiloDrawer';
 import UpgradeModal from './components/UpgradeModal';
 
 const spacingPresets = {
@@ -45,12 +48,12 @@ function formatChemaText(raw: string): string {
 
 const createMessageId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 11)}`;
 
-const PulseDot = ({ color = "black" }) => {
+const PulseDot = ({ isDark = false }: { isDark?: boolean }) => {
   const scale = useSharedValue(1);
 
   useEffect(() => {
     scale.value = withRepeat(
-      withTiming(1.25, { duration: 700 }), // larger pulse, no shrinking
+      withTiming(1.25, { duration: 700 }),
       -1,
       true
     );
@@ -61,17 +64,16 @@ const PulseDot = ({ color = "black" }) => {
   }));
 
   return (
-    <AnimatedReanimated.View
-      style={[
-        {
-          width: 10,
-          height: 10,
-          borderRadius: 5,
-          backgroundColor: color,
-        },
-        animatedStyle,
-      ]}
-    />
+    <AnimatedReanimated.View style={[animatedStyle, { pointerEvents: 'none' }]}>
+      <View
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: 4,
+          backgroundColor: isDark ? '#FFFFFF' : '#000000',
+        }}
+      />
+    </AnimatedReanimated.View>
   );
 };
 
@@ -102,6 +104,45 @@ function renderBoldText(content: string) {
   return parts.length > 0 ? parts : content;
 }
 
+// LetterChar: Individual animated character
+const LetterChar = ({ char, delay }: { char: string; delay: number }) => {
+  const opacity = useSharedValue(0);
+
+  useEffect(() => {
+    opacity.value = withDelay(
+      delay,
+      withTiming(1, { duration: 300, easing: ReanimatedEasing.inOut(ReanimatedEasing.ease) })
+    );
+  }, []);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+  }));
+
+  return (
+    <AnimatedReanimated.Text style={animatedStyle}>
+      {char}
+    </AnimatedReanimated.Text>
+  );
+};
+
+// LetterReveal: Animates text character-by-character with staggered opacity
+const LetterReveal = ({ text, baseDelay, isDark }: { text: string; baseDelay: number; isDark: boolean }) => {
+  const characters = text.split('');
+
+  return (
+    <Text style={[markdownStyles.text, { color: isDark ? '#FFFFFF' : '#000000' }]}>
+      {characters.map((char, charIndex) => (
+        <LetterChar
+          key={charIndex}
+          char={char}
+          delay={baseDelay + charIndex * 4}
+        />
+      ))}
+    </Text>
+  );
+};
+
 export function renderFormattedText(text: string, isDark: boolean = false) {
   if (!text) return null;
 
@@ -131,12 +172,14 @@ export function renderFormattedText(text: string, isDark: boolean = false) {
   return (
     <>
       {formattedBlocks.map((block, index) => (
-        <React.Fragment key={index}>
-          <Text style={[markdownStyles.text, { color: isDark ? '#FFFFFF' : '#000000' }]}>
-            {renderBoldText(block)}
-          </Text>
+        <View key={index}>
+          <LetterReveal
+            text={block}
+            baseDelay={index * 200}
+            isDark={isDark}
+          />
           {index < formattedBlocks.length - 1 && <View style={{ height: 10 }} />}
-        </React.Fragment>
+        </View>
       ))}
     </>
   );
@@ -165,7 +208,89 @@ export default function ChatScreen() {
   const [checkoutUrl, setCheckoutUrl] = useState('');
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const sendLock = React.useRef(false);
+  const flatListRef = React.useRef<FlatList>(null);
   const pulseAnim = useSharedValue(0.95);
+  
+  // Hilo drawer state
+  const [showHilo, setShowHilo] = useState(false);
+  const hiloTranslateX = useSharedValue(0);
+  
+  // Menu discovery pulse animation
+  const [menuDiscovered, setMenuDiscovered] = useState(true); // Default true to prevent flash
+  const headerScale = useSharedValue(1);
+  const headerOpacity = useSharedValue(1);
+
+  // Check if menu has been discovered on mount
+  useEffect(() => {
+    const checkMenuDiscovered = async () => {
+      try {
+        const discovered = await AsyncStorage.getItem('menuDiscovered');
+        if (discovered === 'true') {
+          setMenuDiscovered(true);
+        } else {
+          setMenuDiscovered(false);
+        }
+      } catch (err) {
+        console.log('Error reading menuDiscovered:', err);
+        setMenuDiscovered(false);
+      }
+    };
+    checkMenuDiscovered();
+  }, []);
+
+  // Run pulse animation when menu not discovered
+  useEffect(() => {
+    if (!menuDiscovered) {
+      // Scale: 1.00 → 1.04 → 1.00
+      headerScale.value = withRepeat(
+        withSequence(
+          withTiming(1.04, { duration: 1100, easing: ReanimatedEasing.inOut(ReanimatedEasing.ease) }),
+          withTiming(1.00, { duration: 1100, easing: ReanimatedEasing.inOut(ReanimatedEasing.ease) })
+        ),
+        -1, // infinite
+        false
+      );
+      // Opacity: 1.00 → 0.85 → 1.00
+      headerOpacity.value = withRepeat(
+        withSequence(
+          withTiming(0.85, { duration: 1100, easing: ReanimatedEasing.inOut(ReanimatedEasing.ease) }),
+          withTiming(1.00, { duration: 1100, easing: ReanimatedEasing.inOut(ReanimatedEasing.ease) })
+        ),
+        -1,
+        false
+      );
+    } else {
+      // Stop animation and reset to default
+      cancelAnimation(headerScale);
+      cancelAnimation(headerOpacity);
+      headerScale.value = withTiming(1, { duration: 200 });
+      headerOpacity.value = withTiming(1, { duration: 200 });
+    }
+  }, [menuDiscovered]);
+
+  const headerPulseStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: headerScale.value }],
+    opacity: headerOpacity.value,
+  }));
+
+  const handleChemaTap = async () => {
+    setShowMenu(true);
+    if (!menuDiscovered) {
+      setMenuDiscovered(true);
+      try {
+        await AsyncStorage.setItem('menuDiscovered', 'true');
+      } catch (err) {
+        console.log('Error saving menuDiscovered:', err);
+      }
+    }
+  };
+
+  // Auth guard - redirect to register if not logged in
+  useEffect(() => {
+    if (!user?.id) {
+      router.replace('/auth/Register');
+    }
+  }, [user]);
 
   useEffect(() => {
     if (isLoading) {
@@ -198,6 +323,31 @@ export default function ChatScreen() {
   const pulseStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pulseAnim.value }],
   }));
+
+  // Hilo drawer animation (cinematic timing to match drawer)
+  useEffect(() => {
+    hiloTranslateX.value = withTiming(showHilo ? DRAWER_WIDTH : 0, {
+      duration: showHilo ? 350 : 300,
+      easing: ReanimatedEasing.out(ReanimatedEasing.cubic),
+    });
+  }, [showHilo]);
+
+  const chatContainerStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: hiloTranslateX.value }],
+  }));
+
+  // Left-edge swipe gesture to open Hilo
+  const gestureStartX = useSharedValue(0);
+  const edgeSwipeGesture = Gesture.Pan()
+    .activeOffsetX([20, 100])
+    .onBegin((e) => {
+      gestureStartX.value = e.absoluteX;
+    })
+    .onEnd((e) => {
+      if (e.translationX > 50 && gestureStartX.value < 35) {
+        runOnJS(setShowHilo)(true);
+      }
+    });
 
   const handlePdfPress = async () => {
     try {
@@ -249,11 +399,15 @@ export default function ChatScreen() {
       setIsLoading(true);
 
       // 5. Send to backend (NO CONTENT-TYPE HEADER!!)
-      const userId = await getOrCreateUserId();
+      if (!user?.id) {
+        router.replace('/auth/Register');
+        return;
+      }
+      console.log("🚀 Sending to backend user_id:", user.id);
       const res = await fetch("https://chema-00yh.onrender.com/analyze_pdf", {
         method: "POST",
         headers: {
-          "X-User-ID": userId,
+          "X-User-ID": user.id,
         },
         body: formData,
       });
@@ -321,15 +475,31 @@ export default function ChatScreen() {
     setInput('');
     setIsLoading(true);
 
+    // 📌 Cinematic scroll — anchor newest user message to top
+    // messages.length = old length = index of the NEW message after setState
+    const targetIndex = messages.length;
+    setTimeout(() => {
+      flatListRef.current?.scrollToIndex({
+        index: targetIndex,
+        viewPosition: 0, // anchors item to top
+        animated: true,
+      });
+    }, 100);
+
     console.log("CHEMA → sending request");
 
+    if (!user?.id) {
+      router.replace('/auth/Register');
+      return;
+    }
+
     try {
-      const userId = await getOrCreateUserId();
+      console.log("🚀 Sending to backend user_id:", user.id);
       const response = await fetch("https://chema-00yh.onrender.com/api/ask", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-User-ID": userId,
+          "X-User-ID": user.id,
         },
         body: JSON.stringify({
           question: userInput,
@@ -338,7 +508,6 @@ export default function ChatScreen() {
             content: m.content,
             id: m.id || Date.now().toString()
           })),
-          user_id: userId,
         }),
       });
 
@@ -390,27 +559,46 @@ export default function ChatScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={[styles.container, { backgroundColor: isDark ? '#0D0D0D' : 'white' }]}
-    >
+    <GestureHandlerRootView style={{ flex: 1 }}>
+    <GestureDetector gesture={edgeSwipeGesture}>
+    <AnimatedReanimated.View style={{ flex: 1 }}>
+      <AnimatedReanimated.View
+        entering={FadeIn.duration(450).delay(100)}
+        style={[{ flex: 1 }, chatContainerStyle]}
+      >
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={[styles.container, { backgroundColor: isDark ? '#0D0D0D' : 'white' }]}
+      >
       <View style={[styles.header, { backgroundColor: isDark ? '#0D0D0D' : 'transparent' }]}>
-        <Pressable onPress={() => setShowMenu(true)}>
-          <Text style={[styles.headerTitle, { color: isDark ? '#FFFFFF' : '#000' }]}>Chema</Text>
+        <Pressable onPress={handleChemaTap}>
+          <AnimatedReanimated.View style={headerPulseStyle}>
+            <Text style={[styles.headerTitle, { color: isDark ? '#FFFFFF' : '#000' }]}>Chema</Text>
+          </AnimatedReanimated.View>
         </Pressable>
       </View>
       <FlatList
+        ref={flatListRef}
         data={
           isLoading
             ? [...messages.filter(m => (m as any).type !== 'pdf_upload'), { role: 'assistant', content: '__thinking__', id: 'thinking-dot' }]
             : messages.filter(m => (m as any).type !== 'pdf_upload')
         }
         keyExtractor={(item) => item.id!}
+        onScrollToIndexFailed={(info) => {
+          // Fallback: scroll to approximate position then retry
+          flatListRef.current?.scrollToOffset({
+            offset: info.averageItemLength * info.index,
+            animated: true,
+          });
+        }}
         renderItem={({ item }) => {
           if (item.content === '__thinking__') {
             return (
-              <View style={{ alignSelf: 'flex-start', paddingLeft: 20, paddingVertical: 10 }}>
-                <PulseDot color={isDark ? "#FFFFFF" : "black"} />
+              <View style={{ alignSelf: 'flex-start', paddingLeft: 20, paddingVertical: 10, position: 'relative' }}>
+                <View style={styles.thinkingDotContainer}>
+                  <PulseDot isDark={isDark} />
+                </View>
               </View>
             );
           }
@@ -535,7 +723,18 @@ export default function ChatScreen() {
           onClose={() => setShowUpgradeModal(false)}
         />
       )}
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+      </AnimatedReanimated.View>
+      {showHilo && (
+        <HiloDrawer
+          isOpen={showHilo}
+          onClose={() => setShowHilo(false)}
+          isDark={isDark}
+        />
+      )}
+    </AnimatedReanimated.View>
+    </GestureDetector>
+    </GestureHandlerRootView>
   );
 }
 
@@ -585,6 +784,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: 'white'
+  },
+  thinkingDotContainer: {
+    position: 'absolute',
+    left: 0,
+    top: '50%',
+    transform: [{ translateY: -4 }],
+    pointerEvents: 'none',
   },
   header: {
     alignItems: 'center',

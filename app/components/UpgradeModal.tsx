@@ -1,11 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
-import React from 'react';
-import { Linking, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useState } from 'react';
+import { Alert, Linking, Modal, Platform, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import AnimatedReanimated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import { requestSubscription } from 'react-native-iap';
 import { useAuthContext } from '../../context/AuthContext';
-import { getOrCreateUserId } from '../../utils/identity';
 
 interface UpgradeModalProps {
   checkoutUrl: string;
@@ -14,26 +14,36 @@ interface UpgradeModalProps {
 
 export default function UpgradeModal({ checkoutUrl, onClose }: UpgradeModalProps) {
   const { user } = useAuthContext() as { user: { id?: string } | null; session: any; loading: boolean };
-  const startCheckout = async (plan: "leader" | "founder") => {
+  const [isPurchasing, setIsPurchasing] = useState(false);
+
+  // Stripe checkout for Android/Web (kept for non-iOS platforms)
+  const openStripeCheckout = async (plan: "leader" | "founder") => {
+    if (!user?.id) {
+      console.error("Cannot checkout without logged-in user");
+      return;
+    }
+    
     try {
-      const userId = await getOrCreateUserId();
+      console.log("🛒 Starting Stripe checkout with user ID:", user.id.slice(0, 8) + "...");
+      
       const response = await fetch(
         "https://chema-00yh.onrender.com/stripe/create-checkout-session",
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "X-User-ID": userId,
+            "X-User-ID": user.id,
           },
           body: JSON.stringify({
             plan_name: plan,
-            user_id: userId
+            success_url: "chemaapp://payment-success",
+            cancel_url: "chemaapp://payment-cancel",
           })
         }
       );
 
       const data = await response.json();
-      console.log("Checkout response:", data);
+      console.log("🛒 Checkout response:", data);
 
       if (data.url) {
         Linking.openURL(data.url);
@@ -42,6 +52,58 @@ export default function UpgradeModal({ checkoutUrl, onClose }: UpgradeModalProps
       }
     } catch (err) {
       console.error("Checkout error:", err);
+    }
+  };
+
+  // IAP purchase for iOS
+  const buySubscription = async (plan: "leader" | "founder") => {
+    const sku = plan === "leader" ? "leader.subscription" : "founder.subscription";
+    
+    if (isPurchasing) {
+      console.log("🍎 Purchase already in progress");
+      return;
+    }
+
+    setIsPurchasing(true);
+
+    try {
+      if (Platform.OS === "ios") {
+        console.log("🍎 PURCHASE STARTED:", sku);
+        
+        // Request the subscription - listeners in _layout.tsx will handle the result
+        await requestSubscription({ sku });
+        console.log("🍎 PURCHASE REQUEST SENT:", sku);
+        
+        // Note: Don't close modal here - wait for purchase listener to confirm success
+        // The purchaseUpdatedListener in _layout.tsx handles success
+      } else {
+        // Android/Web: Use Stripe
+        console.log("🛒 Non-iOS platform, using Stripe");
+        openStripeCheckout(plan);
+      }
+    } catch (err: any) {
+      console.log("🍎 IAP PURCHASE ERROR:", err.code, err.message);
+      
+      // Don't fall back to Stripe on iOS - show user-friendly message instead
+      if (Platform.OS === "ios") {
+        if (err.code === 'E_USER_CANCELLED') {
+          console.log("🍎 User cancelled purchase");
+          // Don't show alert for user cancellation
+        } else {
+          Alert.alert(
+            "Purchase Failed",
+            "Unable to complete purchase. Please try again or check your App Store settings.",
+            [{ text: "OK" }]
+          );
+        }
+        // COMMENTED OUT: Stripe fallback disabled on iOS
+        // openStripeCheckout(plan);
+      } else {
+        // Non-iOS: Fall back to Stripe
+        openStripeCheckout(plan);
+      }
+    } finally {
+      setIsPurchasing(false);
     }
   };
 
@@ -91,20 +153,26 @@ export default function UpgradeModal({ checkoutUrl, onClose }: UpgradeModalProps
               <View style={styles.buttonContainer}>
                 <TouchableOpacity
                   style={styles.planButton}
-                  onPress={() => startCheckout("leader")}
+                  onPress={() => buySubscription("leader")}
                   activeOpacity={0.7}
                 >
                   <Text style={styles.planName}>Leader</Text>
                   <Text style={styles.planPrice}>$9.99/month</Text>
+                  <Text style={styles.subscribeHint}>
+                    {Platform.OS === "ios" ? "Subscribe with Apple Pay" : "Subscribe securely"}
+                  </Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   style={styles.planButton}
-                  onPress={() => startCheckout("founder")}
+                  onPress={() => buySubscription("founder")}
                   activeOpacity={0.7}
                 >
                   <Text style={styles.planName}>Founder</Text>
                   <Text style={styles.planPrice}>$19.99/month</Text>
+                  <Text style={styles.subscribeHint}>
+                    {Platform.OS === "ios" ? "Subscribe with Apple Pay" : "Subscribe securely"}
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -217,6 +285,11 @@ const styles = StyleSheet.create({
   planPrice: {
     fontSize: 16,
     color: 'rgba(0, 0, 0, 0.55)',
+  },
+  subscribeHint: {
+    fontSize: 11,
+    color: 'rgba(0, 0, 0, 0.35)',
+    marginTop: 4,
   },
 });
 

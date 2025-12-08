@@ -18,6 +18,7 @@
       }
     },
     "android": {
+      "package": "com.espinobrian50.ChemaApp",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",

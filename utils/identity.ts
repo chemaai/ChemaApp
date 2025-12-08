@@ -1,46 +1,29 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import 'react-native-get-random-values';
-import { v4 as uuidv4 } from 'uuid';
+/**
+ * Identity helper - requires authenticated Supabase user.
+ * No device ID fallback - all users must be logged in.
+ */
 
 /**
- * Returns existing device ID or creates a new one.
- * Used for anonymous free users & message limits.
+ * Returns the user ID for API requests.
+ * Throws if user is not logged in.
+ * 
+ * @param user - The Supabase auth user object
+ * @returns The user's Supabase auth ID
+ * @throws Error if user is not logged in
  */
-export async function getOrCreateUserId() {
-  try {
-    const existing = await AsyncStorage.getItem('CHEMA_DEVICE_ID');
-    if (existing) return existing;
-
-    const newId = uuidv4();
-    await AsyncStorage.setItem('CHEMA_DEVICE_ID', newId);
-    return newId;
-  } catch (err) {
-    console.log("getOrCreateUserId error:", err);
-    const fallback = uuidv4();
-    return fallback;
+export function requireUserId(user: { id?: string } | null): string {
+  if (!user?.id) {
+    throw new Error('User must be logged in');
   }
+  console.log('🔐 User ID:', user.id.slice(0, 8) + '...');
+  return user.id;
 }
 
 /**
- * Returns device ID, or forces a reset (used for logout)
+ * Checks if user is logged in.
+ * @param user - The Supabase auth user object
+ * @returns true if user has a valid ID
  */
-export async function getUserId(forceNew = false) {
-  try {
-    if (forceNew) {
-      const newId = uuidv4();
-      await AsyncStorage.setItem('CHEMA_DEVICE_ID', newId);
-      return newId;
-    }
-
-    const existing = await AsyncStorage.getItem('CHEMA_DEVICE_ID');
-    if (existing) return existing;
-
-    const newId = uuidv4();
-    await AsyncStorage.setItem('CHEMA_DEVICE_ID', newId);
-    return newId;
-  } catch (err) {
-    const fallback = uuidv4();
-    return fallback;
-  }
+export function isLoggedIn(user: { id?: string } | null): boolean {
+  return !!user?.id;
 }
-

@@ -70,9 +70,9 @@ export default function ForgotPasswordScreen() {
             style={[
               styles.input,
               { 
-                backgroundColor: '#FFFFFF',
-                borderColor: '#D9D9D9',
-                color: '#000000',
+                backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF',
+                borderColor: isDark ? '#555555' : '#D9D9D9',
+                color: isDark ? '#FFFFFF' : '#000000',
               }
             ]}
             placeholder="Email"
@@ -104,9 +104,9 @@ export default function ForgotPasswordScreen() {
           style={[
             styles.button,
             { 
-              backgroundColor: '#F1F1F1',
+              backgroundColor: isDark ? '#0D0D0D' : '#F1F1F1',
               borderWidth: 1,
-              borderColor: '#D9D9D9',
+              borderColor: isDark ? '#555555' : '#D9D9D9',
               height: 48,
               borderRadius: 14,
               justifyContent: 'center',
@@ -118,7 +118,7 @@ export default function ForgotPasswordScreen() {
           disabled={loading}
           activeOpacity={0.7}
         >
-          <Text style={[styles.buttonText, { color: colorScheme === 'dark' ? '#FFF' : '#000' }]}>
+          <Text style={[styles.buttonText, { color: isDark ? '#FFFFFF' : '#000000' }]}>
             {loading ? 'Sending...' : 'Send reset email'}
           </Text>
         </TouchableOpacity>

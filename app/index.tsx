@@ -93,7 +93,7 @@ export default function HomeScreen() {
           <Pressable
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              router.push('/chat');
+              router.push('/auth/Register');
             }}
           >
             <Animated.Text

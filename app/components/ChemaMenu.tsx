@@ -5,6 +5,7 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import AnimatedReanimated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { useAuthContext } from '../../context/AuthContext';
+import { useColorScheme } from '../../hooks/use-color-scheme';
 import AboutScreen from '../about';
 import ContactScreen from '../contact';
 import MissionScreen from '../mission';
@@ -15,6 +16,8 @@ interface ChemaMenuProps {
 }
 
 export default function ChemaMenu({ onClose }: ChemaMenuProps) {
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const { user, session } = useAuthContext() as { user: { id?: string; email?: string } | null; session: any; loading: boolean };
   const [activeScreen, setActiveScreen] = useState<'about' | 'mission' | 'founder' | 'contact' | null>(null);
 
@@ -54,7 +57,7 @@ export default function ChemaMenu({ onClose }: ChemaMenuProps) {
         },
       ]}
     >
-      <Pressable style={styles.backdrop} onPress={onClose} />
+      <Pressable style={[styles.backdrop, { backgroundColor: isDark ? 'rgba(13,13,13,0.95)' : 'rgba(255,255,255,0.95)' }]} onPress={onClose} />
       {activeScreen ? (
         <>
           {activeScreen === 'about' && <AboutScreen onClose={handleCloseScreen} />}
@@ -69,12 +72,14 @@ export default function ChemaMenu({ onClose }: ChemaMenuProps) {
             onPress={onClose}
             activeOpacity={0.7}
           >
-            <Ionicons name="close" size={24} color="#000000" />
+            <Ionicons name="close" size={24} color={isDark ? '#FFFFFF' : '#000000'} />
           </TouchableOpacity>
 
           <View style={styles.logoContainer}>
             <Image
-              source={require('../../assets/images/flower.svg')}
+              source={isDark 
+                ? require('../../assets/images/flower_dark.svg')
+                : require('../../assets/images/flower.svg')}
               style={styles.logo}
               resizeMode="contain"
             />
@@ -111,7 +116,7 @@ export default function ChemaMenu({ onClose }: ChemaMenuProps) {
                   onPress={handlePress}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.menuItemText}>{item}</Text>
+                  <Text style={[styles.menuItemText, { color: isDark ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.85)' }]}>{item}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -137,7 +142,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(255,255,255,0.95)',
   },
   content: {
     flex: 1,
@@ -171,7 +175,6 @@ const styles = StyleSheet.create({
   },
   menuItemText: {
     fontSize: 17,
-    color: 'rgba(0,0,0,0.85)',
     fontWeight: '500',
   },
 });

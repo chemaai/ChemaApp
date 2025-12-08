@@ -23,17 +23,8 @@ export function useAuth(): UseAuthReturn {
         if (existingSession) {
           setSession(existingSession);
           setUser(existingSession.user);
-        } else {
-          // No session exists, sign in anonymously
-          const { data: { session: newSession }, error } = await supabase.auth.signInAnonymously();
-          
-          if (error) {
-            console.error('Anonymous sign-in error:', error);
-          } else if (newSession) {
-            setSession(newSession);
-            setUser(newSession.user);
-          }
         }
+        // No anonymous fallback - user must sign in
       } catch (error) {
         console.error('Auth initialization error:', error);
       } finally {
@@ -95,4 +86,3 @@ export async function signOut() {
     return { error };
   }
 }
-

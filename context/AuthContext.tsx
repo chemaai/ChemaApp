@@ -1,28 +1,29 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 
-// Add userProfile to our context state
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
-  const [loadingProfile, setLoadingProfile] = useState(true); // NEW
+  const [loadingProfile, setLoadingProfile] = useState(true);
 
   // --------------------------------------------------
-  // Fetch user profile from public.users (not public.profiles)
-  // Selects only: id, supabase_user_id, plan, stripe_customer_id
+  // Fetch user profile from public.users
+  // Selects: id, supabase_user_id, plan, stripe_customer_id
   // Handles multiple rows - prefers the one with stripe_customer_id
   // --------------------------------------------------
   async function refreshUserProfile(currentUser = null) {
     try {
       const activeUser = currentUser || user;
       if (!activeUser?.id) {
+        setUserProfile(null);
         setLoadingProfile(false);
         return;
       }
 
-      // Query public.users - get ALL rows for this user (there might be multiple)
+      console.log("🔄 Refreshing user profile for:", activeUser.id.slice(0, 8) + "...");
+
       const { data, error } = await supabase
         .from("users")
         .select("id, supabase_user_id, plan, stripe_customer_id")
@@ -36,13 +37,12 @@ export const AuthProvider = ({ children }) => {
 
       if (data && data.length > 0) {
         // If multiple rows exist, prefer the one with stripe_customer_id
-        // (skip the "free" rows that were created incorrectly)
         const recordWithStripe = data.find((r: any) => r.stripe_customer_id);
-        const profileData = recordWithStripe || data[0]; // Use record with Stripe ID, or first one
-        
+        const profileData = recordWithStripe || data[0];
+        console.log("✅ Profile loaded:", profileData.plan, profileData.stripe_customer_id ? "(has Stripe)" : "(no Stripe)");
         setUserProfile(profileData);
       } else {
-        // No record found - set to null
+        console.log("⚠️ No profile found for user");
         setUserProfile(null);
       }
     } catch (err) {
@@ -60,9 +60,9 @@ export const AuthProvider = ({ children }) => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
         setUser(session.user);
-        await refreshUserProfile(session.user); // this sets loadingProfile false at end
+        await refreshUserProfile(session.user);
       } else {
-        setLoadingProfile(false); // NEW
+        setLoadingProfile(false);
       }
     };
 
@@ -73,12 +73,11 @@ export const AuthProvider = ({ children }) => {
         const authUser = session?.user ?? null;
         setUser(authUser);
 
-        // NEW: Whenever auth changes, refresh the profile
         if (authUser) {
-          await refreshUserProfile(authUser); // ends in loadingProfile=false
+          await refreshUserProfile(authUser);
         } else {
           setUserProfile(null);
-          setLoadingProfile(false); // NEW
+          setLoadingProfile(false);
         }
       }
     );
@@ -98,8 +97,6 @@ export const AuthProvider = ({ children }) => {
     if (error) throw error;
 
     setUser(data.user);
-
-    // NEW: fetch Supabase plan on login
     await refreshUserProfile(data.user);
 
     return data.user;
@@ -117,32 +114,74 @@ export const AuthProvider = ({ children }) => {
     if (error) throw error;
 
     setUser(data.user);
-
-    // NEW: fetch initial plan on sign-up (should be "free")
     await refreshUserProfile(data.user);
 
-    // Optional: Your UI can trigger upgrade modal based on this
     return { user: data.user, isNewUser: true };
   };
 
+  // --------------------------------------------------
+  // Update user plan from IAP purchase
+  // --------------------------------------------------
+  const updateUserPlanFromIAP = async (plan: string) => {
+    try {
+      if (!user?.id) {
+        console.log("🍎 Cannot update plan - no user logged in");
+        return;
+      }
+
+      console.log("🍎 Updating user plan to:", plan, "for user:", user.id.slice(0, 8) + "...");
+
+      // Call backend to update plan (backend should verify receipt)
+      const response = await fetch("https://chema-00yh.onrender.com/api/update-plan", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-User-ID": user.id,
+        },
+        body: JSON.stringify({ plan }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.log("🍎 Backend plan update failed:", errorData);
+        // Fallback: update directly in Supabase
+        const { error } = await supabase
+          .from("users")
+          .update({ plan })
+          .eq("supabase_user_id", user.id);
+        
+        if (error) {
+          console.log("🍎 Supabase direct update failed:", error);
+          throw error;
+        }
+        console.log("🍎 Plan updated directly in Supabase (fallback)");
+      } else {
+        console.log("🍎 Plan updated via backend");
+      }
+
+      // Refresh the local profile
+      await refreshUserProfile();
+    } catch (err) {
+      console.log("🍎 Failed to update plan:", err);
+      throw err;
+    }
+  };
+
+  // --------------------------------------------------
+  // Logout
+  // --------------------------------------------------
   const logout = async () => {
     try {
-      // 1. Log out of Supabase (critical - must succeed)
       const { error: signOutError } = await supabase.auth.signOut();
       if (signOutError) {
         console.error("Logout: Supabase signOut failed:", signOutError);
         throw signOutError;
       }
 
-      // 2. Clear authenticated user state immediately
       setUser(null);
       setUserProfile(null);
-
-      // Note: Device ID is preserved to maintain Stripe customer link
-
     } catch (err) {
-      console.error("Logout failed (critical error):", err);
-      // Re-throw so button handler can catch it
+      console.error("Logout failed:", err);
       throw err;
     }
   };
@@ -152,10 +191,12 @@ export const AuthProvider = ({ children }) => {
       value={{
         user,
         userProfile,
+        loadingProfile,
         signIn,
         signUp,
         logout,
-        refreshUserProfile, // Exposed in case UI ever needs it
+        refreshUserProfile,
+        updateUserPlanFromIAP,
       }}
     >
       {children}
