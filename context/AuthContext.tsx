@@ -1,5 +1,13 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
+import { Alert, Platform } from "react-native";
+import { getAvailablePurchases } from "react-native-iap";
 import { supabase } from "../lib/supabase";
+
+// Backend API URL
+const API_BASE_URL = "https://chema-00yh.onrender.com";
+
+// Environment detection for sandbox vs production
+const getEnvironment = () => __DEV__ ? "sandbox" : "production";
 
 const AuthContext = createContext(null);
 
@@ -120,50 +128,95 @@ export const AuthProvider = ({ children }) => {
   };
 
   // --------------------------------------------------
-  // Update user plan from IAP purchase
+  // Restore Purchases - for App Store compliance
+  // Sends each restored receipt to backend for verification
   // --------------------------------------------------
-  const updateUserPlanFromIAP = async (plan: string) => {
+  const restorePurchases = async () => {
+    if (Platform.OS !== "ios") {
+      console.log("🍎 Restore: Not on iOS, skipping");
+      Alert.alert("Not Available", "Restore purchases is only available on iOS.");
+      return;
+    }
+
+    if (!user?.id) {
+      console.log("🍎 Restore: No user logged in");
+      Alert.alert("Error", "Please log in to restore purchases.");
+      return;
+    }
+
     try {
-      if (!user?.id) {
-        console.log("🍎 Cannot update plan - no user logged in");
+      console.log("🍎 ═══════════════════════════════════════");
+      console.log("🍎 RESTORE PURCHASES STARTED");
+      console.log("🍎 User ID:", user.id.slice(0, 8) + "...");
+      console.log("🍎 ═══════════════════════════════════════");
+
+      const purchases = await getAvailablePurchases();
+      console.log("🍎 Found", purchases.length, "purchase(s) to restore");
+
+      if (purchases.length === 0) {
+        console.log("🍎 No purchases found to restore");
+        Alert.alert("No Purchases", "No previous purchases found to restore.");
         return;
       }
 
-      console.log("🍎 Updating user plan to:", plan, "for user:", user.id.slice(0, 8) + "...");
+      const environment = getEnvironment();
+      let restoredCount = 0;
 
-      // Call backend to update plan (backend should verify receipt)
-      const response = await fetch("https://chema-00yh.onrender.com/api/update-plan", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-User-ID": user.id,
-        },
-        body: JSON.stringify({ plan }),
-      });
+      for (const purchase of purchases) {
+        console.log("🍎 Restoring purchase:", purchase.productId);
+        console.log("🍎 Transaction ID:", purchase.transactionId);
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.log("🍎 Backend plan update failed:", errorData);
-        // Fallback: update directly in Supabase
-        const { error } = await supabase
-          .from("users")
-          .update({ plan })
-          .eq("supabase_user_id", user.id);
-        
-        if (error) {
-          console.log("🍎 Supabase direct update failed:", error);
-          throw error;
+        if (!purchase.transactionReceipt) {
+          console.log("🍎 WARNING: No receipt for purchase, skipping");
+          continue;
         }
-        console.log("🍎 Plan updated directly in Supabase (fallback)");
-      } else {
-        console.log("🍎 Plan updated via backend");
+
+        try {
+          // Send receipt to backend for verification
+          const response = await fetch(`${API_BASE_URL}/api/verify-iap-receipt`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-User-ID": user.id,
+            },
+            body: JSON.stringify({
+              receiptData: purchase.transactionReceipt,
+              productId: purchase.productId,
+              transactionId: purchase.transactionId,
+              environment: environment,
+            }),
+          });
+
+          console.log("🍎 Backend response status:", response.status);
+
+          if (response.ok) {
+            const data = await response.json();
+            console.log("🍎 Receipt verified successfully:", data);
+            restoredCount++;
+          } else {
+            const errorData = await response.json().catch(() => ({}));
+            console.log("🍎 Receipt verification failed:", errorData);
+          }
+        } catch (err: any) {
+          console.log("🍎 Error verifying receipt:", err?.message || err);
+        }
       }
 
-      // Refresh the local profile
+      console.log("🍎 ═══════════════════════════════════════");
+      console.log("🍎 RESTORE COMPLETE:", restoredCount, "of", purchases.length);
+      console.log("🍎 ═══════════════════════════════════════");
+
+      // Refresh user profile to get updated plan
       await refreshUserProfile();
-    } catch (err) {
-      console.log("🍎 Failed to update plan:", err);
-      throw err;
+
+      if (restoredCount > 0) {
+        Alert.alert("Success!", "Your purchases have been restored.");
+      } else {
+        Alert.alert("Restore Failed", "Could not verify your previous purchases. Please contact support.");
+      }
+    } catch (err: any) {
+      console.log("🍎 Restore purchases error:", err?.message || err);
+      Alert.alert("Error", "Could not restore purchases. Please try again.");
     }
   };
 
@@ -196,7 +249,7 @@ export const AuthProvider = ({ children }) => {
         signUp,
         logout,
         refreshUserProfile,
-        updateUserPlanFromIAP,
+        restorePurchases,
       }}
     >
       {children}

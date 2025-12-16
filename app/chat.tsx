@@ -3,14 +3,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
-import { router } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import { FlatList, Keyboard, KeyboardAvoidingView, Linking, Platform, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FlatList, Keyboard, KeyboardAvoidingView, Linking, NativeScrollEvent, NativeSyntheticEvent, Platform, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import AnimatedReanimated, { cancelAnimation, FadeIn, Easing as ReanimatedEasing, runOnJS, useAnimatedStyle, useSharedValue, withDelay, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
 import { useAuthContext } from '../context/AuthContext';
+import { useChatContext } from '../context/ChatContext';
 import { useColorScheme } from '../hooks/use-color-scheme';
 import ChemaMenu from './components/ChemaMenu';
+import ExamplePrompts from './components/ExamplePrompts';
 import HiloDrawer, { DRAWER_WIDTH } from './components/HiloDrawer';
 import UpgradeModal from './components/UpgradeModal';
 
@@ -197,19 +199,66 @@ const MagicWords = ({ children }: { children: React.ReactNode }) => {
 };
 
 export default function ChatScreen() {
-  const { user, session } = useAuthContext() as { user: { id?: string } | null; session: any; loading: boolean };
+  const { user, userProfile } = useAuthContext() as unknown as { 
+    user: { id?: string } | null; 
+    userProfile: { plan?: string } | null;
+  };
+  // Use ChatContext to persist messages across navigation
+  const { messages, setMessages } = useChatContext();
+  const { openMenu } = useLocalSearchParams<{ openMenu?: string }>();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const [input, setInput] = useState('');
-  const [messages, setMessages] = useState<{ role: 'user' | 'assistant'; content: string; id?: string }[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [checkoutUrl, setCheckoutUrl] = useState('');
   const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const sendLock = React.useRef(false);
-  const flatListRef = React.useRef<FlatList>(null);
+  const [showPrompts, setShowPrompts] = useState(true); // Show example prompts until first message
+  const sendLock = useRef(false);
+  const flatListRef = useRef<FlatList>(null);
+  const isNearBottom = useRef(true); // Track if user is near bottom of chat
+  const contentHeight = useRef(0);
+  const scrollViewHeight = useRef(0);
   const pulseAnim = useSharedValue(0.95);
+
+  // Auto-open menu if coming from MyAccount
+  useEffect(() => {
+    if (openMenu === 'true') {
+      setShowMenu(true);
+      // Clear the param to prevent re-opening on subsequent renders
+      router.setParams({ openMenu: undefined });
+    }
+  }, [openMenu]);
+
+  // Scroll tracking - only auto-scroll if user is near bottom
+  const SCROLL_THRESHOLD = 150; // pixels from bottom to consider "near bottom"
+  
+  const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+    isNearBottom.current = distanceFromBottom < SCROLL_THRESHOLD;
+    contentHeight.current = contentSize.height;
+    scrollViewHeight.current = layoutMeasurement.height;
+  }, []);
+
+  const scrollToBottom = useCallback((animated = true) => {
+    if (flatListRef.current && isNearBottom.current) {
+      flatListRef.current.scrollToEnd({ animated });
+    }
+  }, []);
+
+  // Memoize filtered messages to prevent unnecessary re-renders
+  const filteredMessages = useMemo(() => {
+    return messages.filter(m => (m as any).type !== 'pdf_upload');
+  }, [messages]);
+
+  const listData = useMemo(() => {
+    if (isLoading) {
+      return [...filteredMessages, { role: 'assistant' as const, content: '__thinking__', id: 'thinking-dot' }];
+    }
+    return filteredMessages;
+  }, [filteredMessages, isLoading]);
   
   // Hilo drawer state
   const [showHilo, setShowHilo] = useState(false);
@@ -340,6 +389,7 @@ export default function ChatScreen() {
   const gestureStartX = useSharedValue(0);
   const edgeSwipeGesture = Gesture.Pan()
     .activeOffsetX([20, 100])
+    .failOffsetY([-15, 15]) // Allow vertical scrolling to take over
     .onBegin((e) => {
       gestureStartX.value = e.absoluteX;
     })
@@ -382,6 +432,11 @@ export default function ChatScreen() {
         content: `PDF Uploaded: ${file.name || "document.pdf"}`,
       };
       setMessages((prev) => [...prev, pdfMessage]);
+      
+      // Scroll to show PDF message
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
 
       // 2. Convert URI to blob
       const response = await fetch(file.uri);
@@ -434,6 +489,9 @@ export default function ChatScreen() {
       });
 
       setIsLoading(false);
+      
+      // Scroll to show new assistant message
+      setTimeout(() => scrollToBottom(true), 150);
 
     } catch (err) {
       console.error("UPLOAD ERROR:", err);
@@ -449,20 +507,32 @@ export default function ChatScreen() {
       });
 
       setIsLoading(false);
+      
+      // Scroll to show error message
+      setTimeout(() => scrollToBottom(true), 150);
     }
   };
 
-  const handleSend = async () => {
+  // Handle sending a message (supports both input field and direct prompt text)
+  const handleSend = async (promptText?: string) => {
     if (sendLock.current) return;
     sendLock.current = true;
-    if (!input.trim() || isLoading) {
+    
+    const textToSend = promptText || input;
+    
+    if (!textToSend.trim() || isLoading) {
       sendLock.current = false;
       return;
     }
 
+    // Hide example prompts on first message
+    if (messages.length === 0) {
+      setShowPrompts(false);
+    }
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-    const userInput = input.trim();
+    const userInput = textToSend.trim();
     const userMessage = {
       role: 'user' as const,
       content: userInput,
@@ -475,15 +545,9 @@ export default function ChatScreen() {
     setInput('');
     setIsLoading(true);
 
-    // 📌 Cinematic scroll — anchor newest user message to top
-    // messages.length = old length = index of the NEW message after setState
-    const targetIndex = messages.length;
+    // Auto-scroll to show new user message (always scroll when user sends)
     setTimeout(() => {
-      flatListRef.current?.scrollToIndex({
-        index: targetIndex,
-        viewPosition: 0, // anchors item to top
-        animated: true,
-      });
+      flatListRef.current?.scrollToEnd({ animated: true });
     }, 100);
 
     console.log("CHEMA → sending request");
@@ -540,18 +604,34 @@ export default function ChatScreen() {
         const withoutThinking = prev.filter(m => m.content !== "__thinking__");
         return [...withoutThinking, assistantMessage];
       });
+      
+      // Scroll to show new assistant message (only if user was near bottom)
+      setTimeout(() => scrollToBottom(true), 150);
     } catch (error) {
       console.log("CHEMA → error", error);
-      const fallbackText = "Chema is waking up… retrying soon.";
-      const errorMessage = {
-        role: 'assistant' as const,
-        content: fallbackText,
-        id: createMessageId()
-      };
-      setMessages(prev => {
-        const withoutThinking = prev.filter(m => m.content !== "__thinking__");
-        return [...withoutThinking, errorMessage];
-      });
+      
+      // Show upgrade modal for non-founder users on error (may be rate limited)
+      const currentPlan = userProfile?.plan || 'free';
+      if (currentPlan !== 'founder') {
+        // Clear the thinking indicator without adding error message
+        setMessages(prev => prev.filter(m => m.content !== "__thinking__"));
+        setShowUpgradeModal(true);
+      } else {
+        // Founder users see a generic connection error
+        const fallbackText = "Connection interrupted. Please try again.";
+        const errorMessage = {
+          role: 'assistant' as const,
+          content: fallbackText,
+          id: createMessageId()
+        };
+        setMessages(prev => {
+          const withoutThinking = prev.filter(m => m.content !== "__thinking__");
+          return [...withoutThinking, errorMessage];
+        });
+        
+        // Scroll to show error message
+        setTimeout(() => scrollToBottom(true), 150);
+      }
     } finally {
       setIsLoading(false);
       sendLock.current = false;
@@ -560,8 +640,11 @@ export default function ChatScreen() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-    <GestureDetector gesture={edgeSwipeGesture}>
     <AnimatedReanimated.View style={{ flex: 1 }}>
+      {/* Left edge swipe zone - only this area detects the drawer gesture */}
+      <GestureDetector gesture={edgeSwipeGesture}>
+        <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 25, zIndex: 100 }} />
+      </GestureDetector>
       <AnimatedReanimated.View
         entering={FadeIn.duration(450).delay(100)}
         style={[{ flex: 1 }, chatContainerStyle]}
@@ -579,18 +662,43 @@ export default function ChatScreen() {
       </View>
       <FlatList
         ref={flatListRef}
-        data={
-          isLoading
-            ? [...messages.filter(m => (m as any).type !== 'pdf_upload'), { role: 'assistant', content: '__thinking__', id: 'thinking-dot' }]
-            : messages.filter(m => (m as any).type !== 'pdf_upload')
-        }
+        data={listData}
+        extraData={isLoading}
         keyExtractor={(item) => item.id!}
+        // Enable scrolling
+        scrollEnabled={true}
+        nestedScrollEnabled={true}
+        // Smooth scroll performance
+        scrollEventThrottle={16}
+        onScroll={handleScroll}
+        // Prevent scroll jitter and layout shifts
+        removeClippedSubviews={Platform.OS === 'android'}
+        maintainVisibleContentPosition={{
+          minIndexForVisible: 0,
+          autoscrollToTopThreshold: 10,
+        }}
+        // Better performance for dynamic content
+        windowSize={21}
+        maxToRenderPerBatch={5}
+        initialNumToRender={10}
+        updateCellsBatchingPeriod={50}
+        // Smooth momentum scrolling
+        decelerationRate="normal"
+        showsVerticalScrollIndicator={false}
+        // Handle keyboard
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        // Allow scroll to work with gestures
+        bounces={true}
+        overScrollMode="never"
         onScrollToIndexFailed={(info) => {
-          // Fallback: scroll to approximate position then retry
-          flatListRef.current?.scrollToOffset({
-            offset: info.averageItemLength * info.index,
-            animated: true,
-          });
+          // Fallback: scroll to approximate position
+          setTimeout(() => {
+            flatListRef.current?.scrollToOffset({
+              offset: info.averageItemLength * info.index,
+              animated: true,
+            });
+          }, 100);
         }}
         renderItem={({ item }) => {
           if (item.content === '__thinking__') {
@@ -652,6 +760,15 @@ export default function ChatScreen() {
         contentContainerStyle={styles.listContent}
       />
 
+      {/* Example prompts - only show when no messages yet */}
+      {messages.length === 0 && showPrompts && (
+        <ExamplePrompts 
+          onSend={(text) => handleSend(text)} 
+          visible={showPrompts}
+          paused={input.length > 0}
+        />
+      )}
+
       <View style={[styles.inputWrapper, { backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF' }, !keyboardVisible && { marginBottom: Platform.OS === "ios" ? 16 : 12 }]}>
         <View style={styles.inputRow}>
           <TouchableOpacity
@@ -670,13 +787,13 @@ export default function ChatScreen() {
             placeholderTextColor={isDark ? "rgba(255,255,255,0.50)" : "rgba(0,0,0,0.30)"}
             value={input}
             onChangeText={setInput}
-            onSubmitEditing={handleSend}
+            onSubmitEditing={() => handleSend()}
             returnKeyType="send"
             editable={!isLoading}
           />
 
           <TouchableOpacity
-            onPress={handleSend}
+            onPress={() => handleSend()}
             activeOpacity={0.6}
             style={styles.sendButton}
             disabled={isLoading}
@@ -737,7 +854,6 @@ export default function ChatScreen() {
         />
       )}
     </AnimatedReanimated.View>
-    </GestureDetector>
     </GestureHandlerRootView>
   );
 }
@@ -821,11 +937,6 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingVertical: 8,
     paddingHorizontal: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 2,
-    elevation: 1,
     maxWidth: '75%',
     marginBottom: 16
   },

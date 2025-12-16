@@ -2,8 +2,8 @@ import { useAuthContext } from '@/context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import React from 'react';
-import { Dimensions, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useState } from 'react';
+import { Alert, Dimensions, Linking, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import AnimatedReanimated, { FadeInUp, FadeOutUp } from 'react-native-reanimated';
 import { useColorScheme } from '../../hooks/use-color-scheme';
 
@@ -12,16 +12,100 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 export default function AccountScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const { user, userProfile, logout } = useAuthContext() as unknown as {
+  const { user, userProfile, logout, restorePurchases } = useAuthContext() as unknown as {
     user: { id?: string; email?: string } | null;
     userProfile: { plan?: string; stripe_customer_id?: string } | null;
     logout: () => Promise<void>;
+    restorePurchases: () => Promise<void>;
   };
   
   const userEmail = user?.email || 'Not signed in';
   const userPlan = userProfile?.plan || 'free';
   const displayPlan = userPlan.charAt(0).toUpperCase() + userPlan.slice(1);
   const hasStripeSubscription = !!userProfile?.stripe_customer_id;
+  const hasPaidPlan = userPlan === 'leader' || userPlan === 'founder';
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+
+  // Open iOS subscription management settings
+  const handleManageIOSSubscription = () => {
+    // Deep link to iOS subscription settings
+    Linking.openURL('https://apps.apple.com/account/subscriptions');
+  };
+
+  // Handle restore purchases
+  const handleRestorePurchases = async () => {
+    if (isRestoring) return;
+    setIsRestoring(true);
+    try {
+      await restorePurchases();
+    } catch (err) {
+      console.log('Restore error:', err);
+    } finally {
+      setIsRestoring(false);
+    }
+  };
+
+  const handleDeleteAccount = () => {
+    if (!user?.id) {
+      Alert.alert('Error', 'Please sign in to delete your account.');
+      return;
+    }
+
+    Alert.alert(
+      'Are you sure you want to delete your account?',
+      'This action cannot be undone. All your data will be permanently deleted.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setIsDeleting(true);
+            try {
+              console.log('🔴 Deleting account for user:', user.id);
+              
+              const response = await fetch(
+                'https://chema-00yh.onrender.com/delete-account',
+                {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({ user_id: user.id }),
+                }
+              );
+
+              const data = await response.json();
+              console.log('🔴 Delete response:', response.status, data);
+
+              if (!response.ok) {
+                throw new Error(data.error || 'Failed to delete account');
+              }
+
+              Alert.alert('Your account has been deleted.', '', [
+                {
+                  text: 'OK',
+                  onPress: async () => {
+                    await logout();
+                    router.replace('/auth/Register');
+                  },
+                },
+              ]);
+            } catch (err: any) {
+              console.error('🔴 Delete account error:', err);
+              Alert.alert('Error', err.message || 'Failed to delete account. Please try again.');
+            } finally {
+              setIsDeleting(false);
+            }
+          },
+        },
+      ]
+    );
+  };
   
   const handleManageSubscription = async () => {
     console.log('🔵 Manage Subscription button clicked');
@@ -84,7 +168,7 @@ export default function AccountScreen() {
     >
       <TouchableOpacity
         style={styles.closeButton}
-        onPress={() => router.back()}
+        onPress={() => router.replace({ pathname: '/chat', params: { openMenu: 'true' } })}
         activeOpacity={0.7}
       >
         <Ionicons 
@@ -138,6 +222,7 @@ export default function AccountScreen() {
           </Text>
         </View>
 
+        {/* Stripe subscription management (Android/Web) */}
         {hasStripeSubscription && (
           <TouchableOpacity
             style={[
@@ -157,6 +242,54 @@ export default function AccountScreen() {
           >
             <Text style={[styles.buttonText, { color: isDark ? '#FFFFFF' : '#000000' }]}>
               Manage Subscription
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        {/* iOS subscription management - Apple requirement */}
+        {Platform.OS === 'ios' && hasPaidPlan && !hasStripeSubscription && (
+          <TouchableOpacity
+            style={[
+              styles.button,
+              {
+                backgroundColor: isDark ? '#0D0D0D' : '#F1F1F1',
+                borderWidth: 1,
+                borderColor: isDark ? '#555555' : '#D9D9D9',
+                height: 48,
+                borderRadius: 14,
+                justifyContent: 'center',
+                alignItems: 'center',
+              },
+            ]}
+            onPress={handleManageIOSSubscription}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.buttonText, { color: isDark ? '#FFFFFF' : '#000000' }]}>
+              Manage Subscription
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Restore Purchases - Apple requirement */}
+        {Platform.OS === 'ios' && (
+          <TouchableOpacity
+            style={[
+              styles.button,
+              {
+                backgroundColor: 'transparent',
+                borderWidth: 0,
+                height: 44,
+                justifyContent: 'center',
+                alignItems: 'center',
+                marginTop: 8,
+              },
+            ]}
+            onPress={handleRestorePurchases}
+            activeOpacity={0.7}
+            disabled={isRestoring}
+          >
+            <Text style={[styles.restoreText, { color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)' }]}>
+              {isRestoring ? 'Restoring...' : 'Restore Purchases'}
             </Text>
           </TouchableOpacity>
         )}
@@ -191,6 +324,18 @@ export default function AccountScreen() {
         >
           <Text style={[styles.buttonText, { color: '#FFFFFF' }]}>
             Log Out
+          </Text>
+        </TouchableOpacity>
+
+        {/* Delete Account - Apple Guideline 5.1.1(v) compliance */}
+        <TouchableOpacity
+          style={styles.deleteAccountButton}
+          onPress={handleDeleteAccount}
+          disabled={isDeleting}
+          activeOpacity={0.6}
+        >
+          <Text style={styles.deleteAccountText}>
+            {isDeleting ? 'Deleting...' : 'Delete Account'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -261,5 +406,20 @@ const styles = StyleSheet.create({
   buttonText: {
     fontSize: 16,
     fontWeight: '500',
+  },
+  deleteAccountButton: {
+    marginTop: 32,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  deleteAccountText: {
+    fontSize: 13,
+    fontWeight: '400',
+    color: '#DC3545',
+  },
+  restoreText: {
+    fontSize: 14,
+    fontWeight: '400',
+    textDecorationLine: 'underline',
   },
 });

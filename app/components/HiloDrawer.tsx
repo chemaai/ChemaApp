@@ -1,19 +1,19 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { useState, useEffect } from 'react';
-import { Alert, Dimensions, StyleSheet, Text, View, TouchableWithoutFeedback, Pressable, TouchableOpacity, Modal, TextInput } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Alert, Dimensions, Modal, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import AnimatedReanimated, {
+    Easing,
+    interpolate,
+    runOnJS,
+    useAnimatedStyle,
+    useSharedValue,
+    withTiming
+} from 'react-native-reanimated';
 
 const HILO_TITLE_KEY = '@hilo_title';
 const DEFAULT_HILO_TITLE = 'Lead with Chema';
-import AnimatedReanimated, { 
-  Easing,
-  interpolate,
-  useAnimatedStyle, 
-  useSharedValue, 
-  withTiming,
-  runOnJS
-} from 'react-native-reanimated';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const DRAWER_WIDTH = SCREEN_WIDTH * 0.75;
@@ -34,6 +34,9 @@ export default function HiloDrawer({ isOpen, onClose, isDark, hiloTitle }: HiloD
   const translateX = useSharedValue(isOpen ? 0 : -DRAWER_WIDTH);
   const opacity = useSharedValue(isOpen ? 1 : 0);
   const [showTooltip, setShowTooltip] = useState(false);
+  
+  // Keep drawer mounted during close animation to prevent white flash
+  const [isVisible, setIsVisible] = useState(isOpen);
   
   // Rename modal state
   const [showRenameModal, setShowRenameModal] = useState(false);
@@ -87,19 +90,26 @@ export default function HiloDrawer({ isOpen, onClose, isDark, hiloTitle }: HiloD
 
   React.useEffect(() => {
     if (isOpen) {
+      // Show drawer immediately when opening
+      setIsVisible(true);
       // Opening: slide in + fade in
       translateX.value = withTiming(0, { duration: OPEN_DURATION, easing: EASE_OUT_CUBIC });
       opacity.value = withTiming(1, { duration: OPEN_DURATION, easing: EASE_OUT_CUBIC });
-    } else {
-      // Closing: slide out + subtle fade
+    } else if (isVisible) {
+      // Closing: slide out + fade, then unmount after animation
       translateX.value = withTiming(-DRAWER_WIDTH, { duration: CLOSE_DURATION, easing: EASE_OUT_CUBIC });
-      opacity.value = withTiming(0.85, { duration: CLOSE_DURATION, easing: EASE_OUT_CUBIC });
+      opacity.value = withTiming(0, { duration: CLOSE_DURATION, easing: EASE_OUT_CUBIC }, () => {
+        runOnJS(setIsVisible)(false);
+      });
     }
   }, [isOpen]);
 
   const drawerStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: translateX.value }],
-    opacity: interpolate(translateX.value, [-DRAWER_WIDTH, 0], [0.85, 1]),
+  }));
+
+  const backdropStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(translateX.value, [-DRAWER_WIDTH, 0], [0, 0.5]),
   }));
 
   const panGesture = Gesture.Pan()
@@ -120,13 +130,20 @@ export default function HiloDrawer({ isOpen, onClose, isDark, hiloTitle }: HiloD
       }
     });
 
-  if (!isOpen) return null;
+  // Only unmount after close animation completes
+  if (!isVisible) return null;
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-      {/* Overlay to close drawer when tapping chat area */}
+      {/* Backdrop overlay - fades in/out smoothly */}
       <TouchableWithoutFeedback onPress={onClose}>
-        <View style={[styles.overlay, { left: DRAWER_WIDTH }]} />
+        <AnimatedReanimated.View 
+          style={[
+            StyleSheet.absoluteFill, 
+            { backgroundColor: '#000000' },
+            backdropStyle
+          ]} 
+        />
       </TouchableWithoutFeedback>
 
       {/* Drawer */}
@@ -167,16 +184,20 @@ export default function HiloDrawer({ isOpen, onClose, isDark, hiloTitle }: HiloD
               </Text>
               <TouchableOpacity
                 onPress={() => Alert.alert("Coming Soon", "More Hilos are coming soon!")}
-                activeOpacity={0.7}
+                activeOpacity={0.6}
                 style={[
                   styles.pencilButton,
-                  { backgroundColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.05)' }
+                  { 
+                    backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF',
+                    borderWidth: 1,
+                    borderColor: isDark ? '#3A3A3A' : '#D9D9D9',
+                  }
                 ]}
               >
                 <Ionicons 
-                  name="pencil" 
-                  size={16} 
-                  color={isDark ? '#EDEDED' : '#111111'} 
+                  name="create-outline" 
+                  size={18} 
+                  color={isDark ? 'rgba(255,255,255,0.65)' : 'rgba(0,0,0,0.50)'} 
                 />
               </TouchableOpacity>
             </Pressable>
@@ -268,12 +289,6 @@ export default function HiloDrawer({ isOpen, onClose, isDark, hiloTitle }: HiloD
 export { DRAWER_WIDTH };
 
 const styles = StyleSheet.create({
-  overlay: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-  },
   drawer: {
     position: 'absolute',
     left: 0,
@@ -323,16 +338,11 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   pencilButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.12,
-    shadowRadius: 3,
-    elevation: 2,
   },
   tooltip: {
     position: 'absolute',

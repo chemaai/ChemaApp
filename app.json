@@ -15,6 +15,9 @@
       "infoPlist": {
         "CFBundleDisplayName": "Chema",
         "ITSAppUsesNonExemptEncryption": false
+      },
+      "entitlements": {
+        "com.apple.developer.in-app-payments": []
       }
     },
     "android": {

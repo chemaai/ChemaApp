@@ -3,18 +3,41 @@ import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
 import React, { useState } from 'react';
 import { Alert, Linking, Modal, Platform, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import * as RNIap from 'react-native-iap';
 import AnimatedReanimated, { FadeIn, FadeOut } from 'react-native-reanimated';
-import { requestSubscription } from 'react-native-iap';
 import { useAuthContext } from '../../context/AuthContext';
 
 interface UpgradeModalProps {
-  checkoutUrl: string;
+  checkoutUrl?: string;
   onClose: () => void;
 }
 
 export default function UpgradeModal({ checkoutUrl, onClose }: UpgradeModalProps) {
-  const { user } = useAuthContext() as { user: { id?: string } | null; session: any; loading: boolean };
+  const { user, userProfile, restorePurchases } = useAuthContext() as unknown as { 
+    user: { id?: string } | null; 
+    userProfile: { plan?: string } | null;
+    restorePurchases: () => Promise<void>;
+  };
   const [isPurchasing, setIsPurchasing] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+
+  // Handle restore purchases
+  const handleRestorePurchases = async () => {
+    if (isRestoring) return;
+    setIsRestoring(true);
+    try {
+      await restorePurchases();
+      onClose(); // Close modal after restore attempt
+    } catch (err) {
+      console.log("🍎 Restore error in modal:", err);
+    } finally {
+      setIsRestoring(false);
+    }
+  };
+  
+  // Determine current plan and suggested upgrade
+  const currentPlan = userProfile?.plan || 'free';
+  const suggestedPlan: 'leader' | 'founder' = currentPlan === 'leader' ? 'founder' : 'leader';
 
   // Stripe checkout for Android/Web (kept for non-iOS platforms)
   const openStripeCheckout = async (plan: "leader" | "founder") => {
@@ -70,8 +93,20 @@ export default function UpgradeModal({ checkoutUrl, onClose }: UpgradeModalProps
       if (Platform.OS === "ios") {
         console.log("🍎 PURCHASE STARTED:", sku);
         
+        // Check if requestSubscription is available (only in native builds, not Expo Go)
+        if (typeof RNIap.requestSubscription !== 'function') {
+          console.log("🍎 IAP not available - using Stripe fallback");
+          Alert.alert(
+            "App Store Required",
+            "In-app purchases are only available in the App Store version. Please download from the App Store to subscribe.",
+            [{ text: "OK" }]
+          );
+          setIsPurchasing(false);
+          return;
+        }
+        
         // Request the subscription - listeners in _layout.tsx will handle the result
-        await requestSubscription({ sku });
+        await RNIap.requestSubscription({ sku });
         console.log("🍎 PURCHASE REQUEST SENT:", sku);
         
         // Note: Don't close modal here - wait for purchase listener to confirm success
@@ -82,11 +117,11 @@ export default function UpgradeModal({ checkoutUrl, onClose }: UpgradeModalProps
         openStripeCheckout(plan);
       }
     } catch (err: any) {
-      console.log("🍎 IAP PURCHASE ERROR:", err.code, err.message);
+      console.log("🍎 IAP PURCHASE ERROR:", err?.code, err?.message);
       
       // Don't fall back to Stripe on iOS - show user-friendly message instead
       if (Platform.OS === "ios") {
-        if (err.code === 'E_USER_CANCELLED') {
+        if (err?.code === 'E_USER_CANCELLED') {
           console.log("🍎 User cancelled purchase");
           // Don't show alert for user cancellation
         } else {
@@ -96,8 +131,6 @@ export default function UpgradeModal({ checkoutUrl, onClose }: UpgradeModalProps
             [{ text: "OK" }]
           );
         }
-        // COMMENTED OUT: Stripe fallback disabled on iOS
-        // openStripeCheckout(plan);
       } else {
         // Non-iOS: Fall back to Stripe
         openStripeCheckout(plan);
@@ -141,39 +174,71 @@ export default function UpgradeModal({ checkoutUrl, onClose }: UpgradeModalProps
 
               <Text style={styles.title}>Upgrade to Continue</Text>
               <Text style={styles.subtitle}>
-                You've reached your daily limit for your current plan.
+                {currentPlan === 'free' 
+                  ? "You've reached your daily limit. Upgrade to keep leading with Chema."
+                  : "You've reached your Leader plan limit. Upgrade to Founder for unlimited access."}
               </Text>
 
               <View style={styles.unlockList}>
-                <Text style={styles.unlockItem}>Unlimited messages</Text>
-                <Text style={styles.unlockItem}>PDF uploads</Text>
-                <Text style={styles.unlockItem}>Fastest model</Text>
+                {currentPlan === 'free' ? (
+                  <>
+                    <Text style={styles.unlockItem}>More daily messages</Text>
+                    <Text style={styles.unlockItem}>PDF uploads</Text>
+                    <Text style={styles.unlockItem}>Priority responses</Text>
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.unlockItem}>Unlimited messages</Text>
+                    <Text style={styles.unlockItem}>Unlimited PDF uploads</Text>
+                    <Text style={styles.unlockItem}>Fastest model</Text>
+                  </>
+                )}
               </View>
 
               <View style={styles.buttonContainer}>
+                {/* Show suggested plan first (highlighted) */}
                 <TouchableOpacity
-                  style={styles.planButton}
-                  onPress={() => buySubscription("leader")}
+                  style={[styles.planButton, styles.suggestedPlanButton]}
+                  onPress={() => buySubscription(suggestedPlan)}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.planName}>Leader</Text>
-                  <Text style={styles.planPrice}>$9.99/month</Text>
+                  <Text style={[styles.planName, styles.suggestedPlanName]}>
+                    {suggestedPlan === 'leader' ? 'Leader' : 'Founder'}
+                  </Text>
+                  <Text style={[styles.planPrice, styles.suggestedPlanPrice]}>
+                    {suggestedPlan === 'leader' ? '$9.99/month' : '$19.99/month'}
+                  </Text>
                   <Text style={styles.subscribeHint}>
                     {Platform.OS === "ios" ? "Subscribe with Apple Pay" : "Subscribe securely"}
                   </Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={styles.planButton}
-                  onPress={() => buySubscription("founder")}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.planName}>Founder</Text>
-                  <Text style={styles.planPrice}>$19.99/month</Text>
-                  <Text style={styles.subscribeHint}>
-                    {Platform.OS === "ios" ? "Subscribe with Apple Pay" : "Subscribe securely"}
-                  </Text>
-                </TouchableOpacity>
+                {/* Show Founder option for free users as secondary */}
+                {currentPlan === 'free' && (
+                  <TouchableOpacity
+                    style={styles.planButton}
+                    onPress={() => buySubscription("founder")}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.planName}>Founder</Text>
+                    <Text style={styles.planPrice}>$19.99/month</Text>
+                    <Text style={styles.subscribeHint}>Unlimited everything</Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* Restore Purchases - Apple requirement */}
+                {Platform.OS === 'ios' && (
+                  <TouchableOpacity
+                    style={styles.restoreButton}
+                    onPress={handleRestorePurchases}
+                    activeOpacity={0.7}
+                    disabled={isRestoring}
+                  >
+                    <Text style={styles.restoreText}>
+                      {isRestoring ? 'Restoring...' : 'Restore Purchases'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
           </BlurView>
@@ -276,20 +341,40 @@ const styles = StyleSheet.create({
     padding: 16,
     alignItems: 'center',
   },
+  suggestedPlanButton: {
+    backgroundColor: '#1A1A1A',
+    borderColor: '#1A1A1A',
+  },
   planName: {
     fontSize: 18,
     fontWeight: '600',
     color: '#000',
     marginBottom: 4,
   },
+  suggestedPlanName: {
+    color: '#FFFFFF',
+  },
   planPrice: {
     fontSize: 16,
     color: 'rgba(0, 0, 0, 0.55)',
+  },
+  suggestedPlanPrice: {
+    color: 'rgba(255, 255, 255, 0.75)',
   },
   subscribeHint: {
     fontSize: 11,
     color: 'rgba(0, 0, 0, 0.35)',
     marginTop: 4,
+  },
+  restoreButton: {
+    marginTop: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  restoreText: {
+    fontSize: 13,
+    color: 'rgba(0, 0, 0, 0.45)',
+    textDecorationLine: 'underline',
   },
 });
 

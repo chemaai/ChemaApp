@@ -3,8 +3,8 @@ import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Dimensions, Keyboard, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
-import { useColorScheme } from '../../hooks/use-color-scheme';
 import { useAuthContext } from '../../context/AuthContext';
+import { useColorScheme } from '../../hooks/use-color-scheme';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -84,8 +84,8 @@ export default function LoginScreen() {
             style={[
               styles.input,
               { 
-                backgroundColor: '#FFFFFF',
-                borderColor: 'rgba(0,0,0,0.10)',
+                backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF',
+                borderColor: isDark ? '#3A3A3A' : 'rgba(0,0,0,0.10)',
                 borderWidth: 1,
                 borderRadius: 16,
                 color: isDark ? '#FFFFFF' : '#000000',
@@ -110,8 +110,8 @@ export default function LoginScreen() {
             style={[
               styles.input,
               { 
-                backgroundColor: '#FFFFFF',
-                borderColor: 'rgba(0,0,0,0.10)',
+                backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF',
+                borderColor: isDark ? '#3A3A3A' : 'rgba(0,0,0,0.10)',
                 borderWidth: 1,
                 borderRadius: 16,
                 color: isDark ? '#FFFFFF' : '#000000',
