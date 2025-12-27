@@ -2,7 +2,7 @@ import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { useEffect, useRef } from 'react';
-import { Animated, Dimensions, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Dimensions, Easing, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useColorScheme } from '../hooks/use-color-scheme';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -109,7 +109,20 @@ export default function HomeScreen() {
         </View>
       </View>
       <Text style={[styles.footerText, { color: isDark ? 'rgba(255,255,255,0.50)' : '#666666' }]}>
-        By continuing you agree to our Terms and Privacy Policy
+        By continuing you agree to our{' '}
+        <Text 
+          onPress={() => Linking.openURL('https://www.apple.com/legal/internet-services/itunes/dev/stdeula/')}
+          style={{ textDecorationLine: 'underline' }}
+        >
+          Terms
+        </Text>
+        {' '}and{' '}
+        <Text 
+          onPress={() => Linking.openURL('https://www.chemaai.co/privacy')}
+          style={{ textDecorationLine: 'underline' }}
+        >
+          Privacy Policy
+        </Text>
       </Text>
     </View>
   );
