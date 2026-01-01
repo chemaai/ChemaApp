@@ -1,3 +1,4 @@
+import * as SecureStore from "expo-secure-store";
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { Alert, Platform } from "react-native";
 import { getAvailablePurchases } from "react-native-iap";
@@ -15,6 +16,7 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
+  const [loadingAuth, setLoadingAuth] = useState(true);
 
   // --------------------------------------------------
   // Fetch user profile from public.users
@@ -34,8 +36,8 @@ export const AuthProvider = ({ children }) => {
 
       const { data, error } = await supabase
         .from("users")
-        .select("id, supabase_user_id, plan, stripe_customer_id")
-        .eq("supabase_user_id", activeUser.id);
+        .select("id, plan, stripe_customer_id")
+        .eq("id", activeUser.id);
 
       if (error) {
         console.log("Failed to refresh profile:", error);
@@ -65,13 +67,32 @@ export const AuthProvider = ({ children }) => {
   // --------------------------------------------------
   useEffect(() => {
     const loadSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      console.log('🔄 Loading session...');
+      
+      // Debug: Check what's in SecureStore
+      try {
+        const stored = await SecureStore.getItemAsync('sb-bzjacfpakzdquohsxsik-auth-token');
+        console.log('📦 SecureStore auth token:', stored ? 'EXISTS (length: ' + stored.length + ')' : 'NULL');
+      } catch (e) {
+        console.log('❌ SecureStore read error:', e);
+      }
+      
+      const { data: { session }, error } = await supabase.auth.getSession();
+      console.log('🔐 getSession result:', {
+        hasSession: !!session,
+        hasUser: !!session?.user,
+        error: error?.message
+      });
+      
       if (session?.user) {
+        console.log('✅ User found:', session.user.id);
         setUser(session.user);
         await refreshUserProfile(session.user);
       } else {
+        console.log('❌ No session found');
         setLoadingProfile(false);
       }
+      setLoadingAuth(false);
     };
 
     loadSession();
@@ -245,6 +266,7 @@ export const AuthProvider = ({ children }) => {
         user,
         userProfile,
         loadingProfile,
+        loadingAuth,
         signIn,
         signUp,
         logout,

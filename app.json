@@ -45,6 +45,7 @@
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",
           "dark": {
+            "image": "./assets/images/Chema_splash_dark.png",
             "backgroundColor": "#000000"
           }
         }

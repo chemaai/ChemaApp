@@ -1,4 +1,4 @@
-import { Slot } from 'expo-router';
+import { Slot, useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import { Alert, Platform, View } from 'react-native';
 import {
@@ -27,12 +27,27 @@ const getEnvironment = () => __DEV__ ? 'sandbox' : 'production';
 
 function RootLayoutContent() {
   useDeepLinkListener();
+  const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const { user, refreshUserProfile } = useAuthContext() as {
+  const { user, loadingAuth, refreshUserProfile } = useAuthContext() as {
     user: { id: string } | null;
+    loadingAuth: boolean;
     refreshUserProfile: () => Promise<void>;
   };
+
+  // Auto-navigate authenticated users to /chat on app startup
+  useEffect(() => {
+    console.log('🚀 [LAYOUT] Auto-nav check:', { loadingAuth, hasUser: !!user?.id });
+    if (!loadingAuth) {
+      if (user?.id) {
+        console.log('🚀 [LAYOUT] User authenticated, navigating to /chat');
+        router.replace('/chat');
+      } else {
+        console.log('🚀 [LAYOUT] No user, staying on landing page');
+      }
+    }
+  }, [loadingAuth, user]);
 
   useEffect(() => {
     let purchaseUpdateSubscription: any = null;

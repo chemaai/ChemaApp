@@ -199,9 +199,12 @@ const MagicWords = ({ children }: { children: React.ReactNode }) => {
 };
 
 export default function ChatScreen() {
-  const { user, userProfile } = useAuthContext() as unknown as { 
+  console.log('🎬 CHAT COMPONENT MOUNTING');
+  
+  const { user, userProfile, loadingAuth } = useAuthContext() as unknown as { 
     user: { id?: string } | null; 
     userProfile: { plan?: string } | null;
+    loadingAuth: boolean;
   };
   // Use ChatContext to persist messages across navigation
   const { messages, setMessages } = useChatContext();
@@ -336,10 +339,22 @@ export default function ChatScreen() {
 
   // Auth guard - redirect to register if not logged in
   useEffect(() => {
-    if (!user?.id) {
+    console.log('🛡️ AUTH GUARD RUNNING:', {
+      loadingAuth,
+      hasUser: !!user?.id,
+      userId: user?.id,
+      willRedirect: !loadingAuth && !user?.id
+    });
+    
+    if (!loadingAuth && !user?.id) {
+      console.log('❌ REDIRECTING TO REGISTER - No user found after loading complete');
       router.replace('/auth/Register');
+    } else if (!loadingAuth && user?.id) {
+      console.log('✅ User authenticated, staying on chat');
+    } else {
+      console.log('⏳ Still loading auth, waiting...');
     }
-  }, [user]);
+  }, [user, loadingAuth]);
 
   useEffect(() => {
     if (isLoading) {
@@ -454,10 +469,11 @@ export default function ChatScreen() {
       setIsLoading(true);
 
       // 5. Send to backend (NO CONTENT-TYPE HEADER!!)
-      if (!user?.id) {
+      if (!loadingAuth && !user?.id) {
         router.replace('/auth/Register');
         return;
       }
+      if (!user?.id) return;
       console.log("🚀 Sending to backend user_id:", user.id);
       const res = await fetch("https://chema-00yh.onrender.com/analyze_pdf", {
         method: "POST",
@@ -552,10 +568,11 @@ export default function ChatScreen() {
 
     console.log("CHEMA → sending request");
 
-    if (!user?.id) {
+    if (!loadingAuth && !user?.id) {
       router.replace('/auth/Register');
       return;
     }
+    if (!user?.id) return;
 
     try {
       console.log("🚀 Sending to backend user_id:", user.id);
@@ -610,33 +627,30 @@ export default function ChatScreen() {
     } catch (error) {
       console.log("CHEMA → error", error);
       
-      // Show upgrade modal for non-founder users on error (may be rate limited)
-      const currentPlan = userProfile?.plan || 'free';
-      if (currentPlan !== 'founder') {
-        // Clear the thinking indicator without adding error message
-        setMessages(prev => prev.filter(m => m.content !== "__thinking__"));
-        setShowUpgradeModal(true);
-      } else {
-        // Founder users see a generic connection error
-        const fallbackText = "Connection interrupted. Please try again.";
-        const errorMessage = {
-          role: 'assistant' as const,
-          content: fallbackText,
-          id: createMessageId()
-        };
-        setMessages(prev => {
-          const withoutThinking = prev.filter(m => m.content !== "__thinking__");
-          return [...withoutThinking, errorMessage];
-        });
-        
-        // Scroll to show error message
-        setTimeout(() => scrollToBottom(true), 150);
-      }
+      // Show generic error message for all users on connection/network errors
+      const fallbackText = "Something went wrong. Please try again in a moment.";
+      const errorMessage = {
+        role: 'assistant' as const,
+        content: fallbackText,
+        id: createMessageId()
+      };
+      setMessages(prev => {
+        const withoutThinking = prev.filter(m => m.content !== "__thinking__");
+        return [...withoutThinking, errorMessage];
+      });
+      
+      // Scroll to show error message
+      setTimeout(() => scrollToBottom(true), 150);
     } finally {
       setIsLoading(false);
       sendLock.current = false;
     }
   };
+
+  console.log('🎨 CHAT RENDERING:', {
+    loadingAuth,
+    hasUser: !!user?.id
+  });
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -743,7 +757,7 @@ export default function ChatScreen() {
               );
             }
             return (
-              <View style={[styles.userBubble, { backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF', borderColor: isDark ? '#3A3A3A' : '#D9D9D9' }]}>
+              <View style={[styles.userBubble, { backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF', borderColor: isDark ? '#3A3A3A' : '#E5E5E7' }]}>
                 <Text style={[styles.userText, { color: isDark ? '#FFFFFF' : '#000' }]}>{item.content}</Text>
               </View>
             );
