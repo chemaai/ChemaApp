@@ -172,27 +172,63 @@ export default function UpgradeModal({ checkoutUrl, onClose }: UpgradeModalProps
                 <Ionicons name="close" size={20} color="rgba(0,0,0,0.65)" />
               </TouchableOpacity>
 
+              <Image
+                source={require('../../assets/images/flower.svg')}
+                style={styles.logo}
+                contentFit="contain"
+              />
+
               <Text style={styles.title}>Upgrade to Continue</Text>
               <Text style={styles.subtitle}>
                 {currentPlan === 'free' 
-                  ? "You've reached your daily limit. Upgrade to keep leading with Chema."
+                  ? "You've reached today's limit. Upgrade to continue."
                   : "You've reached your Leader plan limit. Upgrade to Founder for unlimited access."}
               </Text>
 
-              <View style={styles.unlockList}>
-                {currentPlan === 'free' ? (
-                  <>
-                    <Text style={styles.unlockItem}>More daily messages</Text>
-                    <Text style={styles.unlockItem}>PDF uploads</Text>
-                    <Text style={styles.unlockItem}>Priority responses</Text>
-                  </>
-                ) : (
-                  <>
-                    <Text style={styles.unlockItem}>Unlimited messages</Text>
-                    <Text style={styles.unlockItem}>Unlimited PDF uploads</Text>
-                    <Text style={styles.unlockItem}>Fastest model</Text>
-                  </>
-                )}
+              <View style={styles.tierContainer}>
+                {/* LEADER TIER */}
+                <View style={styles.tier}>
+                  <Text style={styles.tierName}>
+                    LEADER
+                  </Text>
+                  <Text style={styles.tierPrice}>
+                    $9.99/month
+                  </Text>
+                  <Text style={styles.tierFeature}>
+                    • Daily executive conversations
+                  </Text>
+                  <Text style={styles.tierFeature}>
+                    • Unlimited executive memory
+                  </Text>
+                  <Text style={styles.tierFeature}>
+                    • Track decisions, outcomes & milestones
+                  </Text>
+                </View>
+
+                {/* FOUNDER TIER - PREMIUM */}
+                <View style={[styles.tier, styles.founderTier]}>
+                  <Text style={styles.tierName}>
+                    FOUNDER
+                  </Text>
+                  <Text style={styles.tierPrice}>
+                    $19.99/month
+                  </Text>
+                  <Text style={styles.tierFeature}>
+                    • Everything in Pro
+                  </Text>
+                  <Text style={styles.tierFeature}>
+                    • Extended conversation capacity
+                  </Text>
+                  <Text style={styles.tierFeature}>
+                    • Weekly Review (AI-powered accountability)
+                  </Text>
+                  <Text style={styles.tierFeature}>
+                    • Pattern detection across your memory
+                  </Text>
+                  <Text style={styles.tierComingSoon}>
+                    Coming soon: Monthly Audit & Boardroom
+                  </Text>
+                </View>
               </View>
 
               <View style={styles.buttonContainer}>
@@ -208,8 +244,8 @@ export default function UpgradeModal({ checkoutUrl, onClose }: UpgradeModalProps
                   <Text style={[styles.planPrice, styles.suggestedPlanPrice]}>
                     {suggestedPlan === 'leader' ? '$9.99/month' : '$19.99/month'}
                   </Text>
-                  <Text style={styles.subscribeHint}>
-                    {Platform.OS === "ios" ? "Subscribe with Apple Pay" : "Subscribe securely"}
+                  <Text style={[styles.subscribeHint, styles.suggestedSubscribeHint]}>
+                    {Platform.OS === "ios" ? "Subscribe now" : "Subscribe securely"}
                   </Text>
                 </TouchableOpacity>
 
@@ -222,7 +258,7 @@ export default function UpgradeModal({ checkoutUrl, onClose }: UpgradeModalProps
                   >
                     <Text style={styles.planName}>Founder</Text>
                     <Text style={styles.planPrice}>$19.99/month</Text>
-                    <Text style={styles.subscribeHint}>Unlimited everything</Text>
+                    <Text style={styles.subscribeHint}>{Platform.OS === "ios" ? "Subscribe now" : "Subscribe securely"}</Text>
                   </TouchableOpacity>
                 )}
 
@@ -274,7 +310,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   blurContainer: {
-    backgroundColor: 'rgba(255, 255, 255, 0.75)',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: 'rgba(0, 0, 0, 0.12)',
     borderRadius: 24,
@@ -306,6 +342,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 2,
   },
+  logo: {
+    width: 64,
+    height: 64,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
   title: {
     fontSize: 22,
     fontWeight: '600',
@@ -320,35 +362,76 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
-  unlockList: {
+  tierContainer: {
+    flexDirection: 'row',
+    gap: 12,
     marginBottom: 24,
-    alignItems: 'center',
-    gap: 4,
   },
-  unlockItem: {
-    fontSize: 12,
-    color: 'rgba(0, 0, 0, 0.45)',
-    textAlign: 'center',
+  tier: {
+    flex: 1,
+    backgroundColor: '#F5F5F7',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
+  },
+  founderTier: {
+    borderColor: '#1C1C1E',
+    borderWidth: 2,
+    backgroundColor: '#FFFFFF',
+    shadowColor: 'rgba(0, 0, 0, 0.08)',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 1,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  tierName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1C1C1E',
+    marginBottom: 2,
+    letterSpacing: 0.5,
+  },
+  tierPrice: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(0, 0, 0, 0.75)',
+    marginBottom: 10,
+  },
+  tierFeature: {
+    fontSize: 11,
+    color: 'rgba(0, 0, 0, 0.55)',
+    marginBottom: 4,
+    lineHeight: 15,
+  },
+  tierComingSoon: {
+    fontSize: 10,
+    color: 'rgba(0, 0, 0, 0.35)',
+    fontStyle: 'italic',
+    marginTop: 6,
   },
   buttonContainer: {
     gap: 12,
   },
   planButton: {
     backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.15)',
-    borderRadius: 16,
-    padding: 16,
+    borderWidth: 1.5,
+    borderColor: '#1C1C1E',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    minHeight: 54,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   suggestedPlanButton: {
-    backgroundColor: '#1A1A1A',
-    borderColor: '#1A1A1A',
+    backgroundColor: '#1C1C1E',
+    borderColor: '#1C1C1E',
   },
   planName: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#000',
+    color: '#1C1C1E',
     marginBottom: 4,
   },
   suggestedPlanName: {
@@ -356,15 +439,18 @@ const styles = StyleSheet.create({
   },
   planPrice: {
     fontSize: 16,
-    color: 'rgba(0, 0, 0, 0.55)',
+    color: '#1C1C1E',
   },
   suggestedPlanPrice: {
-    color: 'rgba(255, 255, 255, 0.75)',
+    color: 'rgba(255, 255, 255, 0.9)',
   },
   subscribeHint: {
     fontSize: 11,
-    color: 'rgba(0, 0, 0, 0.35)',
+    color: 'rgba(28, 28, 30, 0.6)',
     marginTop: 4,
+  },
+  suggestedSubscribeHint: {
+    color: 'rgba(255, 255, 255, 0.8)',
   },
   restoreButton: {
     marginTop: 8,
@@ -372,9 +458,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   restoreText: {
-    fontSize: 13,
-    color: 'rgba(0, 0, 0, 0.45)',
-    textDecorationLine: 'underline',
+    fontSize: 12,
+    color: '#8E8E93',
   },
 });
 

@@ -12,9 +12,6 @@
       "distribution": "internal"
     },
     "production": {
-      "ios": {
-        "simulator": false
-      },
       "autoIncrement": true,
       "distribution": "store"
     }

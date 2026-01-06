@@ -1,4 +1,3 @@
-import * as SecureStore from "expo-secure-store";
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { Alert, Platform } from "react-native";
 import { getAvailablePurchases } from "react-native-iap";
@@ -32,8 +31,6 @@ export const AuthProvider = ({ children }) => {
         return;
       }
 
-      console.log("🔄 Refreshing user profile for:", activeUser.id.slice(0, 8) + "...");
-
       const { data, error } = await supabase
         .from("users")
         .select("id, plan, stripe_customer_id")
@@ -49,10 +46,8 @@ export const AuthProvider = ({ children }) => {
         // If multiple rows exist, prefer the one with stripe_customer_id
         const recordWithStripe = data.find((r: any) => r.stripe_customer_id);
         const profileData = recordWithStripe || data[0];
-        console.log("✅ Profile loaded:", profileData.plan, profileData.stripe_customer_id ? "(has Stripe)" : "(no Stripe)");
         setUserProfile(profileData);
       } else {
-        console.log("⚠️ No profile found for user");
         setUserProfile(null);
       }
     } catch (err) {
@@ -67,29 +62,12 @@ export const AuthProvider = ({ children }) => {
   // --------------------------------------------------
   useEffect(() => {
     const loadSession = async () => {
-      console.log('🔄 Loading session...');
-      
-      // Debug: Check what's in SecureStore
-      try {
-        const stored = await SecureStore.getItemAsync('sb-bzjacfpakzdquohsxsik-auth-token');
-        console.log('📦 SecureStore auth token:', stored ? 'EXISTS (length: ' + stored.length + ')' : 'NULL');
-      } catch (e) {
-        console.log('❌ SecureStore read error:', e);
-      }
-      
-      const { data: { session }, error } = await supabase.auth.getSession();
-      console.log('🔐 getSession result:', {
-        hasSession: !!session,
-        hasUser: !!session?.user,
-        error: error?.message
-      });
+      const { data: { session } } = await supabase.auth.getSession();
       
       if (session?.user) {
-        console.log('✅ User found:', session.user.id);
         setUser(session.user);
         await refreshUserProfile(session.user);
       } else {
-        console.log('❌ No session found');
         setLoadingProfile(false);
       }
       setLoadingAuth(false);

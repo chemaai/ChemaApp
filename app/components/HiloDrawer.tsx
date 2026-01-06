@@ -1,8 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { Alert, Dimensions, Modal, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { useChatContext } from '../../context/ChatContext';
+import { Alert, Dimensions, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import { Gesture, GestureDetector, GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler';
 import AnimatedReanimated, {
     Easing,
     interpolate,
@@ -31,6 +33,16 @@ interface HiloDrawerProps {
 }
 
 export default function HiloDrawer({ isOpen, onClose, isDark, hiloTitle }: HiloDrawerProps) {
+  const router = useRouter();
+  const { 
+    allHilos, 
+    currentHiloId,
+    createHilo, 
+    switchHilo, 
+    renameHilo, 
+    deleteHilo 
+  } = useChatContext();
+
   const translateX = useSharedValue(isOpen ? 0 : -DRAWER_WIDTH);
   const opacity = useSharedValue(isOpen ? 1 : 0);
   const [showTooltip, setShowTooltip] = useState(false);
@@ -130,6 +142,39 @@ export default function HiloDrawer({ isOpen, onClose, isDark, hiloTitle }: HiloD
       }
     });
 
+  // Render delete button for swipe action
+  const renderRightActions = (hiloId: string, hiloTitle: string) => {
+    return (
+      <TouchableOpacity
+        onPress={() => {
+          Alert.alert(
+            "Delete HILO",
+            `Are you sure you want to delete "${hiloTitle}"? This will permanently delete all messages in this conversation.`,
+            [
+              { text: "Cancel", style: "cancel" },
+              { 
+                text: "Delete", 
+                style: "destructive",
+                onPress: async () => {
+                  await deleteHilo(hiloId);
+                }
+              }
+            ]
+          );
+        }}
+        style={{
+          backgroundColor: '#FF3B30',
+          justifyContent: 'center',
+          alignItems: 'center',
+          width: 80,
+          height: '100%'
+        }}
+      >
+        <Ionicons name="trash-outline" size={22} color="#FFFFFF" />
+      </TouchableOpacity>
+    );
+  };
+
   // Only unmount after close animation completes
   if (!isVisible) return null;
 
@@ -163,61 +208,185 @@ export default function HiloDrawer({ isOpen, onClose, isDark, hiloTitle }: HiloD
             Hilo
           </Text>
 
-          {/* Thread list area */}
-          <View style={styles.contentArea}>
-            {/* Single thread row — Apple Files style */}
-            <Pressable
-              onPress={() => {}}
-              onLongPress={handleLongPress}
-              delayLongPress={400}
-              style={styles.threadRow}
+          {/* Top half - Future features */}
+          <View style={styles.topSection}>
+            {/* Decisions */}
+            <TouchableOpacity
+              onPress={() => {
+                onClose();
+                router.push('/decisions');
+              }}
+              style={styles.placeholderSection}
             >
-              <Text 
-                style={[
-                  styles.threadTitle, 
-                  { color: isDark ? '#EDEDED' : '#111111' }
-                ]}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                {displayTitle}
+              <Text style={[styles.sectionHeader, { color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)' }]}>
+                DECISIONS
               </Text>
-              <TouchableOpacity
-                onPress={() => Alert.alert("Coming Soon", "More Hilos are coming soon!")}
-                activeOpacity={0.6}
-                style={[
-                  styles.pencilButton,
-                  { 
-                    backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF',
-                    borderWidth: 1,
-                    borderColor: isDark ? '#3A3A3A' : '#D9D9D9',
-                  }
-                ]}
-              >
-                <Ionicons 
-                  name="create-outline" 
-                  size={18} 
-                  color={isDark ? 'rgba(255,255,255,0.65)' : 'rgba(0,0,0,0.50)'} 
-                />
-              </TouchableOpacity>
+            </TouchableOpacity>
+
+            {/* Boardroom placeholder */}
+            <Pressable
+              onPress={() => {
+                Alert.alert(
+                  "Boardroom",
+                  "Coming soon. Collaborate with your team on strategic decisions.",
+                  [{ text: "Got it" }]
+                );
+              }}
+              style={styles.placeholderSection}
+            >
+              <Text style={[styles.sectionHeader, { color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)' }]}>
+                BOARDROOM
+              </Text>
+              <Text style={[styles.placeholderTitle, { color: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)' }]}>
+                Team Strategy
+              </Text>
             </Pressable>
 
-            {/* Tooltip for long-press */}
-            {showTooltip && (
-              <View style={[styles.tooltip, { backgroundColor: isDark ? '#333' : '#222' }]}>
-                <Text style={styles.tooltipText}>Rename coming soon</Text>
-              </View>
-            )}
+            {/* Projects placeholder */}
+            <Pressable
+              onPress={() => {
+                Alert.alert(
+                  "Projects",
+                  "Coming soon. Track long-term initiatives and milestones.",
+                  [{ text: "Got it" }]
+                );
+              }}
+              style={styles.placeholderSection}
+            >
+              <Text style={[styles.sectionHeader, { color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)' }]}>
+                PROJECTS
+              </Text>
+              <Text style={[styles.placeholderTitle, { color: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)' }]}>
+                Initiative Tracking
+              </Text>
+            </Pressable>
           </View>
 
-          {/* Teaser content — positioned at bottom */}
-          <View style={styles.teaserContainer}>
-            <Text style={[styles.teaserTitle, { color: isDark ? 'rgba(237,237,237,0.6)' : 'rgba(17,17,17,0.6)' }]}>
-              More threads coming soon…
+          {/* Divider */}
+          <View style={[styles.divider, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]} />
+
+          {/* Bottom half - HILOs */}
+          <View style={styles.bottomSection}>
+            {/* Recents header */}
+            <Text style={[styles.sectionHeader, { color: isDark ? 'rgba(255,255,255,0.65)' : 'rgba(0,0,0,0.65)', marginBottom: 8 }]}>
+              RECENTS
             </Text>
-            <Text style={[styles.teaserSubtitle, { color: isDark ? 'rgba(237,237,237,0.6)' : 'rgba(17,17,17,0.6)' }]}>
-              Chema is organizing your future.
-            </Text>
+
+            {/* HILO list */}
+            <GestureHandlerRootView style={{ flex: 1 }}>
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {allHilos.map((hilo) => {
+                  const isActive = hilo.id === currentHiloId;
+                  
+                  return (
+                    <Swipeable
+                      key={hilo.id}
+                      renderRightActions={() => renderRightActions(hilo.id, hilo.title)}
+                      overshootRight={false}
+                    >
+                      <Pressable
+                        onPress={() => {
+                          if (!isActive) {
+                            switchHilo(hilo.id);
+                            onClose();
+                          }
+                        }}
+                        onLongPress={() => {
+                          Alert.prompt(
+                            "Rename HILO",
+                            "Enter new name",
+                            [
+                              { text: "Cancel", style: "cancel" },
+                              { 
+                                text: "Rename", 
+                                onPress: async (text) => {
+                                  if (text && text.trim()) {
+                                    await renameHilo(hilo.id, text.trim());
+                                  }
+                                }
+                              }
+                            ],
+                            "plain-text",
+                            hilo.title
+                          );
+                        }}
+                        delayLongPress={400}
+                        style={[
+                          styles.threadRow,
+                          { backgroundColor: isDark ? '#0A0A0A' : '#FFFFFF' },
+                          isActive && { 
+                            backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)'
+                          }
+                        ]}
+                      >
+                        <Text 
+                          style={[
+                            styles.threadTitle, 
+                            { color: isDark ? '#EDEDED' : '#111111' },
+                            isActive && { fontWeight: '600' }
+                          ]}
+                          numberOfLines={1}
+                          ellipsizeMode="tail"
+                        >
+                          {hilo.title}
+                        </Text>
+                        
+                        {isActive && (
+                          <View style={{ 
+                            width: 6, 
+                            height: 6, 
+                            borderRadius: 3, 
+                            backgroundColor: isDark ? '#EDEDED' : '#111111',
+                            marginLeft: 8
+                          }} />
+                        )}
+                      </Pressable>
+                    </Swipeable>
+                  );
+                })}
+              
+                {/* Create new HILO button */}
+                <TouchableOpacity
+                  onPress={() => {
+                    Alert.prompt(
+                      "New HILO",
+                      "What would you like to name this conversation?",
+                      [
+                        { text: "Cancel", style: "cancel" },
+                        { 
+                          text: "Create", 
+                          onPress: async (text) => {
+                            if (text && text.trim()) {
+                              await createHilo(text.trim());
+                              onClose();
+                            }
+                          }
+                        }
+                      ],
+                      "plain-text",
+                      "Board Meeting Prep"
+                    );
+                  }}
+                  activeOpacity={0.6}
+                  style={[
+                    styles.pencilButton,
+                    { 
+                      backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF',
+                      borderWidth: 1,
+                      borderColor: isDark ? '#3A3A3A' : '#000000',
+                      marginTop: 12,
+                      alignSelf: 'center'
+                    }
+                  ]}
+                >
+                  <Ionicons 
+                    name="add" 
+                    size={20} 
+                    color={isDark ? 'rgba(255,255,255,0.65)' : 'rgba(0,0,0,0.50)'} 
+                  />
+                </TouchableOpacity>
+              </ScrollView>
+            </GestureHandlerRootView>
           </View>
 
           {/* Right edge divider */}
@@ -248,7 +417,7 @@ export default function HiloDrawer({ isOpen, onClose, isDark, hiloTitle }: HiloD
                 { 
                   backgroundColor: isDark ? '#2C2C2E' : '#F2F2F7',
                   color: isDark ? '#EDEDED' : '#111111',
-                  borderColor: isDark ? '#3A3A3C' : '#E5E5EA'
+                  borderColor: isDark ? '#3A3A3C' : '#000000'
                 }
               ]}
               value={renameInput}
@@ -320,6 +489,31 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '700',
     marginBottom: 24,
+  },
+  topSection: {
+    paddingTop: 8,
+  },
+  bottomSection: {
+    flex: 1,
+    paddingBottom: 20,
+  },
+  placeholderSection: {
+    marginBottom: 16,
+    paddingVertical: 8,
+  },
+  sectionHeader: {
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 1.2,
+    marginBottom: 4,
+  },
+  placeholderTitle: {
+    fontSize: 16,
+    fontWeight: '400',
+  },
+  divider: {
+    height: 1,
+    marginVertical: 16,
   },
   contentArea: {
     flex: 1,

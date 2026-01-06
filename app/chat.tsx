@@ -5,15 +5,13 @@ import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, Keyboard, KeyboardAvoidingView, Linking, NativeScrollEvent, NativeSyntheticEvent, Platform, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, FlatList, Keyboard, KeyboardAvoidingView, Linking, NativeScrollEvent, NativeSyntheticEvent, Platform, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import AnimatedReanimated, { cancelAnimation, FadeIn, Easing as ReanimatedEasing, runOnJS, useAnimatedStyle, useSharedValue, withDelay, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
 import { useAuthContext } from '../context/AuthContext';
 import { useChatContext } from '../context/ChatContext';
 import { useColorScheme } from '../hooks/use-color-scheme';
 import ChemaMenu from './components/ChemaMenu';
-import ExamplePrompts from './components/ExamplePrompts';
-import HiloDrawer, { DRAWER_WIDTH } from './components/HiloDrawer';
 import UpgradeModal from './components/UpgradeModal';
 
 const spacingPresets = {
@@ -107,14 +105,16 @@ function renderBoldText(content: string) {
 }
 
 // LetterChar: Individual animated character
-const LetterChar = ({ char, delay }: { char: string; delay: number }) => {
-  const opacity = useSharedValue(0);
+const LetterChar = ({ char, delay, animate = true }: { char: string; delay: number; animate?: boolean }) => {
+  const opacity = useSharedValue(animate ? 0 : 1);
 
   useEffect(() => {
-    opacity.value = withDelay(
-      delay,
-      withTiming(1, { duration: 300, easing: ReanimatedEasing.inOut(ReanimatedEasing.ease) })
-    );
+    if (animate) {
+      opacity.value = withDelay(
+        delay,
+        withTiming(1, { duration: 300, easing: ReanimatedEasing.inOut(ReanimatedEasing.ease) })
+      );
+    }
   }, []);
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -129,7 +129,7 @@ const LetterChar = ({ char, delay }: { char: string; delay: number }) => {
 };
 
 // LetterReveal: Animates text character-by-character with staggered opacity
-const LetterReveal = ({ text, baseDelay, isDark }: { text: string; baseDelay: number; isDark: boolean }) => {
+const LetterReveal = ({ text, baseDelay, isDark, animate = true }: { text: string; baseDelay: number; isDark: boolean; animate?: boolean }) => {
   const characters = text.split('');
 
   return (
@@ -139,14 +139,18 @@ const LetterReveal = ({ text, baseDelay, isDark }: { text: string; baseDelay: nu
           key={charIndex}
           char={char}
           delay={baseDelay + charIndex * 4}
+          animate={animate}
         />
       ))}
     </Text>
   );
 };
 
-export function renderFormattedText(text: string, isDark: boolean = false) {
+export function renderFormattedText(text: string, isDark: boolean = false, animate: boolean = true) {
   if (!text) return null;
+
+  // Strip markdown asterisks
+  text = text.replace(/\*\*/g, '');
 
   // Split into blocks: paragraph breaks (double newlines or sentence end + newline + capital) and numbered list items
   const blocks = text.split(/(\n\n+)|(?<=[.!?])\n(?=[A-Z])|(?=\n\d+\.\s+[A-Z0-9])/);
@@ -179,6 +183,7 @@ export function renderFormattedText(text: string, isDark: boolean = false) {
             text={block}
             baseDelay={index * 200}
             isDark={isDark}
+            animate={animate}
           />
           {index < formattedBlocks.length - 1 && <View style={{ height: 10 }} />}
         </View>
@@ -187,7 +192,12 @@ export function renderFormattedText(text: string, isDark: boolean = false) {
   );
 }
 
-const MagicWords = ({ children }: { children: React.ReactNode }) => {
+const MagicWords = ({ children, animate = true }: { children: React.ReactNode; animate?: boolean }) => {
+  if (!animate) {
+    // No animation - render children directly with full opacity
+    return <View style={{ opacity: 1 }}>{children}</View>;
+  }
+  
   return (
     <AnimatedReanimated.View
       entering={FadeIn.duration(500)}
@@ -199,16 +209,14 @@ const MagicWords = ({ children }: { children: React.ReactNode }) => {
 };
 
 export default function ChatScreen() {
-  console.log('🎬 CHAT COMPONENT MOUNTING');
-  
   const { user, userProfile, loadingAuth } = useAuthContext() as unknown as { 
     user: { id?: string } | null; 
     userProfile: { plan?: string } | null;
     loadingAuth: boolean;
   };
   // Use ChatContext to persist messages across navigation
-  const { messages, setMessages } = useChatContext();
-  const { openMenu } = useLocalSearchParams<{ openMenu?: string }>();
+  const { messages, setMessages, isInitializing, switchHilo, currentHiloId } = useChatContext();
+  const { openMenu, hiloId } = useLocalSearchParams<{ openMenu?: string; hiloId?: string }>();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const [input, setInput] = useState('');
@@ -217,7 +225,8 @@ export default function ChatScreen() {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [checkoutUrl, setCheckoutUrl] = useState('');
   const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const [showPrompts, setShowPrompts] = useState(true); // Show example prompts until first message
+  const [isReadyToShow, setIsReadyToShow] = useState(false); // Wait for scroll before showing
+  const [showScrollButton, setShowScrollButton] = useState(false);
   const sendLock = useRef(false);
   const flatListRef = useRef<FlatList>(null);
   const isNearBottom = useRef(true); // Track if user is near bottom of chat
@@ -234,6 +243,22 @@ export default function ChatScreen() {
     }
   }, [openMenu]);
 
+  // Switch to specific HILO if hiloId provided in URL (from dashboard)
+  // Clear messages immediately to prevent flash of wrong HILO
+  useEffect(() => {
+    if (hiloId) {
+      setMessages([]);
+    }
+  }, [hiloId]);
+
+  // Then switch after initialization completes
+  useEffect(() => {
+    if (hiloId && switchHilo && !isInitializing) {
+      switchHilo(hiloId);
+      router.setParams({ hiloId: undefined });
+    }
+  }, [hiloId, isInitializing]);
+
   // Scroll tracking - only auto-scroll if user is near bottom
   const SCROLL_THRESHOLD = 150; // pixels from bottom to consider "near bottom"
   
@@ -243,6 +268,8 @@ export default function ChatScreen() {
     isNearBottom.current = distanceFromBottom < SCROLL_THRESHOLD;
     contentHeight.current = contentSize.height;
     scrollViewHeight.current = layoutMeasurement.height;
+    // Show scroll button when user scrolls up more than 100px from bottom
+    setShowScrollButton(distanceFromBottom > 100);
   }, []);
 
   const scrollToBottom = useCallback((animated = true) => {
@@ -250,6 +277,22 @@ export default function ChatScreen() {
       flatListRef.current.scrollToEnd({ animated });
     }
   }, []);
+
+  // Handle initial scroll and reveal - triggered by FlatList onLayout
+  const hasScrolledInitial = useRef(false);
+  const handleFlatListLayout = useCallback(() => {
+    if (!hasScrolledInitial.current && !isInitializing) {
+      hasScrolledInitial.current = true;
+      
+      if (messages.length > 0) {
+        // Scroll to end, then reveal
+        flatListRef.current?.scrollToEnd({ animated: false });
+        setTimeout(() => setIsReadyToShow(true), 50);
+      } else {
+        setIsReadyToShow(true);
+      }
+    }
+  }, [isInitializing, messages.length]);
 
   // Memoize filtered messages to prevent unnecessary re-renders
   const filteredMessages = useMemo(() => {
@@ -262,11 +305,7 @@ export default function ChatScreen() {
     }
     return filteredMessages;
   }, [filteredMessages, isLoading]);
-  
-  // Hilo drawer state
-  const [showHilo, setShowHilo] = useState(false);
-  const hiloTranslateX = useSharedValue(0);
-  
+
   // Menu discovery pulse animation
   const [menuDiscovered, setMenuDiscovered] = useState(true); // Default true to prevent flash
   const headerScale = useSharedValue(1);
@@ -339,20 +378,8 @@ export default function ChatScreen() {
 
   // Auth guard - redirect to register if not logged in
   useEffect(() => {
-    console.log('🛡️ AUTH GUARD RUNNING:', {
-      loadingAuth,
-      hasUser: !!user?.id,
-      userId: user?.id,
-      willRedirect: !loadingAuth && !user?.id
-    });
-    
     if (!loadingAuth && !user?.id) {
-      console.log('❌ REDIRECTING TO REGISTER - No user found after loading complete');
       router.replace('/auth/Register');
-    } else if (!loadingAuth && user?.id) {
-      console.log('✅ User authenticated, staying on chat');
-    } else {
-      console.log('⏳ Still loading auth, waiting...');
     }
   }, [user, loadingAuth]);
 
@@ -387,32 +414,6 @@ export default function ChatScreen() {
   const pulseStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pulseAnim.value }],
   }));
-
-  // Hilo drawer animation (cinematic timing to match drawer)
-  useEffect(() => {
-    hiloTranslateX.value = withTiming(showHilo ? DRAWER_WIDTH : 0, {
-      duration: showHilo ? 350 : 300,
-      easing: ReanimatedEasing.out(ReanimatedEasing.cubic),
-    });
-  }, [showHilo]);
-
-  const chatContainerStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: hiloTranslateX.value }],
-  }));
-
-  // Left-edge swipe gesture to open Hilo
-  const gestureStartX = useSharedValue(0);
-  const edgeSwipeGesture = Gesture.Pan()
-    .activeOffsetX([20, 100])
-    .failOffsetY([-15, 15]) // Allow vertical scrolling to take over
-    .onBegin((e) => {
-      gestureStartX.value = e.absoluteX;
-    })
-    .onEnd((e) => {
-      if (e.translationX > 50 && gestureStartX.value < 35) {
-        runOnJS(setShowHilo)(true);
-      }
-    });
 
   const handlePdfPress = async () => {
     try {
@@ -541,11 +542,6 @@ export default function ChatScreen() {
       return;
     }
 
-    // Hide example prompts on first message
-    if (messages.length === 0) {
-      setShowPrompts(false);
-    }
-
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     const userInput = textToSend.trim();
@@ -592,22 +588,24 @@ export default function ChatScreen() {
         }),
       });
 
-      console.log("CHEMA → received response");
+      console.log("CHEMA → received response, status:", response.status);
 
-      if (!response.ok) {
-        throw new Error('Network error');
-      }
-
+      // Parse JSON first - even error responses may contain upgrade_required
       const data = await response.json();
       console.log("BACKEND RAW RESPONSE →", data);
       
-      // Check for upgrade_required error
+      // Check for upgrade_required error (rate limit hit)
       if (data.error === "upgrade_required") {
         setCheckoutUrl(data.url || "");
         setShowUpgradeModal(true);
         setIsLoading(false);
         sendLock.current = false;
         return;
+      }
+
+      // If response not OK and not upgrade_required, throw error
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.status}`);
       }
       
       const replyText = data.reply || "Ready when you are — clarity starts with conversation.";
@@ -647,38 +645,77 @@ export default function ChatScreen() {
     }
   };
 
-  console.log('🎨 CHAT RENDERING:', {
-    loadingAuth,
-    hasUser: !!user?.id
-  });
+  // Show loading screen while initializing
+  if (isInitializing) {
+    return (
+      <View style={{ 
+        flex: 1, 
+        justifyContent: 'center', 
+        alignItems: 'center',
+        backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF'
+      }}>
+        <Image 
+          source={isDark 
+            ? require('../assets/images/Chema_splash_dark.png')
+            : require('../assets/images/flower.png')
+          }
+          style={{ width: 100, height: 100 }}
+          resizeMode="contain"
+        />
+      </View>
+    );
+  }
+  
+  // Chat is rendered but hidden until scroll completes
+  const chatOpacity = isReadyToShow ? 1 : 0;
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <GestureHandlerRootView style={{ flex: 1, opacity: chatOpacity, backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF' }}>
     <AnimatedReanimated.View style={{ flex: 1 }}>
-      {/* Left edge swipe zone - only this area detects the drawer gesture */}
-      <GestureDetector gesture={edgeSwipeGesture}>
-        <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 25, zIndex: 100 }} />
-      </GestureDetector>
       <AnimatedReanimated.View
         entering={FadeIn.duration(450).delay(100)}
-        style={[{ flex: 1 }, chatContainerStyle]}
+        style={{ flex: 1 }}
       >
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={[styles.container, { backgroundColor: isDark ? '#0D0D0D' : 'white' }]}
       >
       <View style={[styles.header, { backgroundColor: isDark ? '#0D0D0D' : 'transparent' }]}>
-        <Pressable onPress={handleChemaTap}>
-          <AnimatedReanimated.View style={headerPulseStyle}>
-            <Text style={[styles.headerTitle, { color: isDark ? '#FFFFFF' : '#000' }]}>Chema</Text>
-          </AnimatedReanimated.View>
-        </Pressable>
+        <View>
+          <Text style={[styles.headerTitle, { color: isDark ? '#FFFFFF' : '#000' }]}>Chema</Text>
+        </View>
       </View>
+
+      {/* Empty state - "Begin." */}
+      {messages.length === 0 && !isLoading && (
+        <View style={{ 
+          flex: 1, 
+          justifyContent: 'center', 
+          alignItems: 'center',
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          pointerEvents: 'none'
+        }}>
+          <Text style={{ 
+            fontSize: 32,
+            fontWeight: '300',
+            color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)',
+            letterSpacing: 1
+          }}>
+            Begin.
+          </Text>
+        </View>
+      )}
+
       <FlatList
         ref={flatListRef}
         data={listData}
         extraData={isLoading}
         keyExtractor={(item) => item.id!}
+        onLayout={handleFlatListLayout}
         // Enable scrolling
         scrollEnabled={true}
         nestedScrollEnabled={true}
@@ -735,7 +772,7 @@ export default function ChatScreen() {
             // Render PDF message with icon and open action
             if ((item as any).type === 'pdf') {
               return (
-                <View style={[styles.pdfBubble, { backgroundColor: isDark ? '#0a0a0a' : '#FFFFFF', borderColor: isDark ? '#2a2a2a' : 'rgba(0,0,0,0.1)' }]}>
+                <View style={[styles.pdfBubble, { backgroundColor: isDark ? '#0a0a0a' : '#FFFFFF', borderColor: isDark ? '#3A3A3A' : '#000000', borderWidth: isDark ? 1 : 0.5 }]}>
                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                     <Ionicons name="document-text" size={20} color={isDark ? "#FFFFFF" : "#000"} style={{ marginRight: 8 }} />
                     <Text style={[styles.userText, { color: isDark ? '#FFFFFF' : '#000' }]}>{(item as any).name || "document.pdf"}</Text>
@@ -757,42 +794,148 @@ export default function ChatScreen() {
               );
             }
             return (
-              <View style={[styles.userBubble, { backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF', borderColor: isDark ? '#3A3A3A' : '#E5E5E7' }]}>
+              <View style={[styles.userBubble, { backgroundColor: isDark ? '#0D0D0D' : '#F2F2F2', borderColor: isDark ? '#3A3A3A' : 'transparent' }]}>
                 <Text style={[styles.userText, { color: isDark ? '#FFFFFF' : '#000' }]}>{item.content}</Text>
               </View>
             );
           }
 
+          const shouldAnimate = (item as any).isNew !== false; // Animate unless explicitly false
           return (
             <View style={[styles.chemaContainer, getSpacingStyle((item as any).layoutStyle || "cinematic"), isDark && { backgroundColor: 'transparent', borderWidth: 0, borderColor: 'transparent', shadowColor: 'transparent', elevation: 0 }]}>
-              <MagicWords>
-                {renderFormattedText(item.content, isDark)}
+              <MagicWords animate={shouldAnimate}>
+                {renderFormattedText(item.content, isDark, shouldAnimate)}
               </MagicWords>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
+                <Text style={{ fontSize: 12, color: isDark ? '#555' : '#AAA' }}>
+                  Save as:
+                </Text>
+                <Text style={{ marginLeft: 10 }} />
+                <Pressable onPress={async () => {
+                  try {
+                    const response = await fetch('https://chema-00yh.onrender.com/api/decisions', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        user_id: user?.id,
+                        content: item.content,
+                        hilo_id: currentHiloId
+                      })
+                    });
+                    
+                    if (response.ok) {
+                      Alert.alert('Saved', 'Decision saved successfully');
+                    } else {
+                      const data = await response.json();
+                      if (data.error === 'upgrade_required') {
+                        Alert.alert(
+                          'Decision Tracking',
+                          'Track unlimited decisions and outcomes with Pro ($9.99/mo) or Founder ($19.99/mo).',
+                          [
+                            { text: 'Not Now', style: 'cancel' },
+                            { 
+                              text: 'View Plans', 
+                              onPress: () => setShowUpgradeModal(true)
+                            }
+                          ]
+                        );
+                      } else {
+                        Alert.alert('Error', data.message || 'Failed to save');
+                      }
+                    }
+                  } catch (error) {
+                    console.error('Save error:', error);
+                    Alert.alert('Error', 'Failed to save decision');
+                  }
+                }}>
+                  <Text style={{ fontSize: 12, color: isDark ? '#888' : '#777' }}>Decision</Text>
+                </Pressable>
+                <Text style={{ marginLeft: 12 }} />
+                <Pressable onPress={async () => {
+                  try {
+                    const response = await fetch('https://chema-00yh.onrender.com/api/milestones', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        user_id: user?.id,
+                        content: item.content,
+                        hilo_id: currentHiloId
+                      })
+                    });
+                    
+                    if (response.ok) {
+                      Alert.alert('Saved', 'Milestone saved successfully');
+                    } else {
+                      const data = await response.json();
+                      if (data.error === 'upgrade_required') {
+                        Alert.alert(
+                          'Milestone Tracking',
+                          'Track unlimited milestones with Pro ($9.99/mo) or Founder ($19.99/mo).',
+                          [
+                            { text: 'Not Now', style: 'cancel' },
+                            { 
+                              text: 'View Plans', 
+                              onPress: () => setShowUpgradeModal(true)
+                            }
+                          ]
+                        );
+                      } else {
+                        Alert.alert('Error', data.message || 'Failed to save');
+                      }
+                    }
+                  } catch (error) {
+                    console.error('Save error:', error);
+                    Alert.alert('Error', 'Failed to save milestone');
+                  }
+                }}>
+                  <Text style={{ fontSize: 12, color: isDark ? '#888' : '#777' }}>Milestone</Text>
+                </Pressable>
+              </View>
             </View>
           );
         }}
         contentContainerStyle={styles.listContent}
       />
 
-      {/* Example prompts - only show when no messages yet */}
-      {messages.length === 0 && showPrompts && (
-        <ExamplePrompts 
-          onSend={(text) => handleSend(text)} 
-          visible={showPrompts}
-          paused={input.length > 0}
-        />
+      {showScrollButton && (
+        <TouchableOpacity
+          style={{
+            position: 'absolute',
+            bottom: 80,
+            left: '50%',
+            marginLeft: -22,
+            width: 44,
+            height: 44,
+            borderRadius: 22,
+            backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF',
+            justifyContent: 'center',
+            alignItems: 'center',
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.25,
+            shadowRadius: 4,
+            elevation: 5,
+            zIndex: 100,
+          }}
+          onPress={() => {
+            setShowScrollButton(false);
+            flatListRef.current?.scrollToEnd({ animated: true });
+          }}
+        >
+          <Text style={{ fontSize: 20, color: isDark ? '#FFFFFF' : '#000000' }}>↓</Text>
+        </TouchableOpacity>
       )}
 
       <View style={[styles.inputWrapper, { backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF' }, !keyboardVisible && { marginBottom: Platform.OS === "ios" ? 16 : 12 }]}>
         <View style={styles.inputRow}>
           <TouchableOpacity
             onPress={handlePdfPress}
-            style={[styles.pdfButton, { backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF', borderColor: isDark ? '#3A3A3A' : 'rgba(0,0,0,0.12)' }]}
+            style={[styles.pdfButton, { backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF', borderColor: isDark ? '#3A3A3A' : '#000000', borderWidth: isDark ? 1 : 0.5 }]}
             activeOpacity={0.7}
           >
-            <Text style={[styles.pdfPlus, { color: isDark ? 'rgba(255,255,255,0.50)' : 'rgba(0,0,0,0.4)' }]}>＋</Text>
+            <Text style={[styles.pdfPlus, { color: isDark ? 'rgba(255,255,255,0.50)' : '#000000' }]}>＋</Text>
           </TouchableOpacity>
-          <View style={[styles.inputContainer, { backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF', borderColor: isDark ? '#3A3A3A' : 'rgba(0,0,0,0.12)' }]}>
+          <View style={[styles.inputContainer, { backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF', borderColor: isDark ? '#3A3A3A' : '#000000', borderWidth: isDark ? 1 : 0.5 }]}>
 
           <TextInput
             multiline
@@ -856,17 +999,6 @@ export default function ChatScreen() {
       )}
       </KeyboardAvoidingView>
       </AnimatedReanimated.View>
-      {showHilo && (
-        <HiloDrawer
-          isOpen={showHilo}
-          onClose={() => setShowHilo(false)}
-          isDark={isDark}
-          hiloTitle={(() => {
-            const firstUserMsg = messages.find(m => m.role === 'user');
-            return firstUserMsg ? firstUserMsg.content.substring(0, 10) : '';
-          })()}
-        />
-      )}
     </AnimatedReanimated.View>
     </GestureHandlerRootView>
   );
@@ -934,11 +1066,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: '600',
     opacity: 0.95,
   },
   listContent: {
+    flexGrow: 1,
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 120

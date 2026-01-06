@@ -167,15 +167,11 @@ export default function AccountScreen() {
       style={{ flex: 1, backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF' }}
     >
       <TouchableOpacity
-        style={styles.closeButton}
-        onPress={() => router.replace({ pathname: '/chat', params: { openMenu: 'true' } })}
+        style={styles.backButton}
+        onPress={() => router.back()}
         activeOpacity={0.7}
       >
-        <Ionicons 
-          name="close" 
-          size={28} 
-          color={isDark ? '#FFFFFF' : '#000000'} 
-        />
+        <Text style={[styles.backText, { color: '#888888' }]}>back</Text>
       </TouchableOpacity>
       <ScrollView
         contentContainerStyle={[
@@ -230,7 +226,7 @@ export default function AccountScreen() {
               {
                 backgroundColor: isDark ? '#0D0D0D' : '#F1F1F1',
                 borderWidth: 1,
-                borderColor: isDark ? '#555555' : '#D9D9D9',
+                borderColor: isDark ? '#555555' : '#000000',
                 height: 48,
                 borderRadius: 14,
                 justifyContent: 'center',
@@ -254,7 +250,7 @@ export default function AccountScreen() {
               {
                 backgroundColor: isDark ? '#0D0D0D' : '#F1F1F1',
                 borderWidth: 1,
-                borderColor: isDark ? '#555555' : '#D9D9D9',
+                borderColor: isDark ? '#555555' : '#000000',
                 height: 48,
                 borderRadius: 14,
                 justifyContent: 'center',
@@ -352,15 +348,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 40,
   },
-  closeButton: {
+  backButton: {
     position: 'absolute',
-    top: 50,
-    right: 20,
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
+    top: 60,
+    left: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
     zIndex: 1001,
+  },
+  backText: {
+    fontSize: 14,
+    fontWeight: '400',
   },
   logoContainer: {
     marginTop: SCREEN_HEIGHT * 0.20,

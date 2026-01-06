@@ -71,7 +71,7 @@ export default function ForgotPasswordScreen() {
               styles.input,
               { 
                 backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF',
-                borderColor: isDark ? '#3A3A3A' : 'rgba(0,0,0,0.10)',
+                borderColor: isDark ? '#3A3A3A' : '#000000',
                 color: isDark ? '#FFFFFF' : '#000000',
               }
             ]}
@@ -106,7 +106,7 @@ export default function ForgotPasswordScreen() {
             { 
               backgroundColor: isDark ? '#0D0D0D' : '#F1F1F1',
               borderWidth: 1,
-              borderColor: isDark ? '#555555' : '#D9D9D9',
+              borderColor: isDark ? '#555555' : '#000000',
               height: 48,
               borderRadius: 14,
               justifyContent: 'center',

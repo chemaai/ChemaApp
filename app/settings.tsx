@@ -3,23 +3,21 @@ import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import AnimatedReanimated, { FadeIn, FadeOut } from 'react-native-reanimated';
-import { useAuthContext } from '../../context/AuthContext';
-import { useColorScheme } from '../../hooks/use-color-scheme';
-import AboutScreen from '../about';
-import ContactScreen from '../contact';
-import MissionScreen from '../mission';
-import TheFounderScreen from '../the-founder';
+import AnimatedReanimated, { FadeIn } from 'react-native-reanimated';
+import { useAuthContext } from '../context/AuthContext';
+import { useColorScheme } from '../hooks/use-color-scheme';
+import AboutScreen from './about';
+import ContactScreen from './contact';
+import MissionScreen from './mission';
+import TheFounderScreen from './the-founder';
+import UpgradeModal from './components/UpgradeModal';
 
-interface ChemaMenuProps {
-  onClose: () => void;
-}
-
-export default function ChemaMenu({ onClose }: ChemaMenuProps) {
+export default function SettingsScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const { user, session } = useAuthContext() as { user: { id?: string; email?: string } | null; session: any; loading: boolean };
+  const { user } = useAuthContext() as { user: { id?: string; email?: string } | null };
   const [activeScreen, setActiveScreen] = useState<'about' | 'mission' | 'founder' | 'contact' | null>(null);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   const handleOpenScreen = (screen: 'about' | 'mission' | 'founder' | 'contact') => {
     setActiveScreen(screen);
@@ -29,12 +27,17 @@ export default function ChemaMenu({ onClose }: ChemaMenuProps) {
     setActiveScreen(null);
   };
 
+  const handleBack = () => {
+    router.back();
+  };
+
   const isLoggedIn = !!user?.email;
 
   const baseMenuItems = [
     'About',
     'Mission',
     'Contact Us',
+    'Upgrade Plan',
   ];
 
   const authMenuItem = isLoggedIn ? 'My Account' : 'Sign Up / Log In';
@@ -43,20 +46,11 @@ export default function ChemaMenu({ onClose }: ChemaMenuProps) {
   return (
     <AnimatedReanimated.View
       entering={FadeIn.duration(250)}
-      exiting={FadeOut.duration(250)}
       style={[
-        styles.overlay,
-        {
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          zIndex: 999,
-        },
+        styles.container,
+        { backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF' }
       ]}
     >
-      <Pressable style={[styles.backdrop, { backgroundColor: isDark ? 'rgba(13,13,13,0.95)' : 'rgba(255,255,255,0.95)' }]} onPress={onClose} />
       {activeScreen ? (
         <>
           {activeScreen === 'about' && <AboutScreen onClose={handleCloseScreen} />}
@@ -68,19 +62,19 @@ export default function ChemaMenu({ onClose }: ChemaMenuProps) {
         <View style={styles.content}>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={onClose}
+            onPress={handleBack}
             activeOpacity={0.7}
           >
-            <Text style={[styles.backText, { color: '#888888' }]}>back</Text>
+            <Text style={[styles.backText, { color: isDark ? '#888888' : '#888888' }]}>back</Text>
           </TouchableOpacity>
 
           <View style={styles.logoContainer}>
             <Image
               source={isDark 
-                ? require('../../assets/images/flower_dark.svg')
-                : require('../../assets/images/flower.svg')}
+                ? require('../assets/images/flower_dark.svg')
+                : require('../assets/images/flower.svg')}
               style={styles.logo}
-              resizeMode="contain"
+              contentFit="contain"
             />
           </View>
 
@@ -95,16 +89,12 @@ export default function ChemaMenu({ onClose }: ChemaMenuProps) {
                   handleOpenScreen('founder');
                 } else if (item === 'Contact Us') {
                   handleOpenScreen('contact');
+                } else if (item === 'Upgrade Plan') {
+                  setShowUpgradeModal(true);
                 } else if (item === 'Sign Up / Log In') {
                   router.push('/auth/Login');
-                  onClose();
-                  return;
                 } else if (item === 'My Account') {
                   router.push('/MyAccount');
-                  onClose();
-                  return;
-                } else {
-                  onClose();
                 }
               };
 
@@ -122,25 +112,18 @@ export default function ChemaMenu({ onClose }: ChemaMenuProps) {
           </View>
         </View>
       )}
+      {showUpgradeModal && (
+        <UpgradeModal
+          onClose={() => setShowUpgradeModal(false)}
+        />
+      )}
     </AnimatedReanimated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 1000,
-  },
-  backdrop: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+  container: {
+    flex: 1,
   },
   content: {
     flex: 1,

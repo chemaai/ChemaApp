@@ -99,8 +99,8 @@ export default function ExamplePrompts({ onSend, visible, paused = false }: Exam
   if (!visible) return null;
 
   // Match chat bubble colors exactly
-  const bubbleBackground = isDark ? '#0D0D0D' : '#FFFFFF';
-  const bubbleBorder = isDark ? '#3A3A3A' : '#D9D9D9';
+  const bubbleBackground = isDark ? '#0D0D0D' : '#F2F2F2';
+  const bubbleBorder = isDark ? '#3A3A3A' : 'transparent';
   // First word: darker/more prominent
   const boldColor = isDark ? 'rgba(255,255,255,0.90)' : 'rgba(0,0,0,0.75)';
   // Rest: slightly softer but readable

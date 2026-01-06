@@ -47,7 +47,7 @@ export default function LoginScreen() {
 
     try {
       await signIn(email.trim(), password);
-      router.push('/chat');
+      router.push('/dashboard');
     } catch (err: any) {
       setError(err.message || 'Failed to sign in');
       setLoading(false);
@@ -85,7 +85,7 @@ export default function LoginScreen() {
               styles.input,
               { 
                 backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF',
-                borderColor: isDark ? '#3A3A3A' : 'rgba(0,0,0,0.10)',
+                borderColor: isDark ? '#3A3A3A' : '#000000',
                 borderWidth: 1,
                 borderRadius: 16,
                 color: isDark ? '#FFFFFF' : '#000000',
@@ -111,7 +111,7 @@ export default function LoginScreen() {
               styles.input,
               { 
                 backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF',
-                borderColor: isDark ? '#3A3A3A' : 'rgba(0,0,0,0.10)',
+                borderColor: isDark ? '#3A3A3A' : '#000000',
                 borderWidth: 1,
                 borderRadius: 16,
                 color: isDark ? '#FFFFFF' : '#000000',

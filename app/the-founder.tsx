@@ -19,11 +19,11 @@ export default function TheFounderScreen({ onClose }: TheFounderScreenProps) {
       style={[styles.container, { backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF' }]}
     >
       <TouchableOpacity
-        style={styles.closeButton}
+        style={styles.backButton}
         onPress={onClose}
         activeOpacity={0.7}
       >
-        <Ionicons name="close" size={24} color={isDark ? '#FFFFFF' : '#000000'} />
+        <Text style={[styles.backText, { color: '#888888' }]}>back</Text>
       </TouchableOpacity>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -70,15 +70,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  closeButton: {
+  backButton: {
     position: 'absolute',
-    top: 50,
-    right: 20,
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
+    top: 60,
+    left: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
     zIndex: 1001,
+  },
+  backText: {
+    fontSize: 14,
+    fontWeight: '400',
   },
   content: {
     alignItems: 'center',

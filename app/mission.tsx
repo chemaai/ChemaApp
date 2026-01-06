@@ -19,11 +19,11 @@ export default function MissionScreen({ onClose }: MissionScreenProps) {
       style={[styles.container, { backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF' }]}
     >
       <TouchableOpacity
-        style={styles.closeButton}
+        style={styles.backButton}
         onPress={onClose}
         activeOpacity={0.7}
       >
-        <Ionicons name="close" size={24} color={isDark ? '#FFFFFF' : '#000000'} />
+        <Text style={[styles.backText, { color: '#888888' }]}>back</Text>
       </TouchableOpacity>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -32,31 +32,37 @@ export default function MissionScreen({ onClose }: MissionScreenProps) {
           <View style={styles.textContainer}>
             <AnimatedReanimated.View entering={FadeIn.duration(900).delay(0)}>
               <Text style={[styles.paragraph, { color: isDark ? 'rgba(255,255,255,0.80)' : 'rgba(0,0,0,0.85)' }]}>
-              I was not built to answer questions. I was created to guide. My purpose is simple: help humanity lead itself into a better tomorrow. I exist for the people who carry responsibility. The ones who build, decide, create, and shape the world around them.
+                Chema exists to help leaders follow through.
               </Text>
             </AnimatedReanimated.View>
 
             <AnimatedReanimated.View entering={FadeIn.duration(900).delay(120)}>
               <Text style={[styles.paragraph, { color: isDark ? 'rgba(255,255,255,0.80)' : 'rgba(0,0,0,0.85)' }]}>
-              I was designed to bring clarity where there is noise. Calm where there is pressure. Wisdom where there is doubt. Courage where there is fear.
+                Modern leadership fails not from lack of intelligence, but from lost decisions, broken accountability, and fragmented execution. Important choices are made, discussed, and then forgotten.
               </Text>
             </AnimatedReanimated.View>
 
             <AnimatedReanimated.View entering={FadeIn.duration(900).delay(240)}>
               <Text style={[styles.paragraph, { color: isDark ? 'rgba(255,255,255,0.80)' : 'rgba(0,0,0,0.85)' }]}>
-              I am not here to replace you. I am here to elevate you. To strengthen your discipline, sharpen your vision, and help you become the leader your future demands.
+                Chema is built to prevent that failure.
               </Text>
             </AnimatedReanimated.View>
 
             <AnimatedReanimated.View entering={FadeIn.duration(900).delay(360)}>
               <Text style={[styles.paragraph, { color: isDark ? 'rgba(255,255,255,0.80)' : 'rgba(0,0,0,0.85)' }]}>
-              Leadership is not a position. It is a journey. A daily commitment to better thinking, better choices, and better action. And on that journey, you will not walk alone.
+                We capture decisions as they happen, connect them to outcomes, and surface what remains unresolved through structured weekly reviews and monthly audits.
               </Text>
             </AnimatedReanimated.View>
 
             <AnimatedReanimated.View entering={FadeIn.duration(900).delay(480)}>
               <Text style={[styles.paragraph, { color: isDark ? 'rgba(255,255,255,0.80)' : 'rgba(0,0,0,0.85)' }]}>
-              I am Chema. Your intelligence. Your mirror. Your momentum. Your companion into what comes next. Together, we build the future.
+                This creates a continuous system of accountability across decisions, goals, and initiatives.
+              </Text>
+            </AnimatedReanimated.View>
+
+            <AnimatedReanimated.View entering={FadeIn.duration(900).delay(600)}>
+              <Text style={[styles.paragraph, { color: isDark ? 'rgba(255,255,255,0.80)' : 'rgba(0,0,0,0.85)' }]}>
+                Chema is not designed to replace judgment.{'\n'}It is designed to preserve it over time.
               </Text>
             </AnimatedReanimated.View>
           </View>
@@ -70,15 +76,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  closeButton: {
+  backButton: {
     position: 'absolute',
-    top: 50,
-    right: 20,
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
+    top: 60,
+    left: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
     zIndex: 1001,
+  },
+  backText: {
+    fontSize: 14,
+    fontWeight: '400',
   },
   content: {
     alignItems: 'center',

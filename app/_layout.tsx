@@ -1,5 +1,6 @@
-import { Slot, useRouter } from 'expo-router';
-import { useEffect } from 'react';
+import { Stack, useRouter, useSegments } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
+import { useEffect, useRef } from 'react';
 import { Alert, Platform, View } from 'react-native';
 import {
     endConnection,
@@ -16,6 +17,9 @@ import { ChatProvider } from '../context/ChatContext';
 import { useColorScheme } from '../hooks/use-color-scheme';
 import useDeepLinkListener from '../hooks/useDeepLinkListener';
 
+// Prevent splash screen from auto-hiding until auth check completes
+SplashScreen.preventAutoHideAsync();
+
 // IAP Product IDs - must match App Store Connect exactly
 const IAP_SKUS = ['leader.subscription', 'founder.subscription'];
 
@@ -28,26 +32,37 @@ const getEnvironment = () => __DEV__ ? 'sandbox' : 'production';
 function RootLayoutContent() {
   useDeepLinkListener();
   const router = useRouter();
+  const segments = useSegments();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const hasNavigated = useRef(false);
   const { user, loadingAuth, refreshUserProfile } = useAuthContext() as {
     user: { id: string } | null;
     loadingAuth: boolean;
     refreshUserProfile: () => Promise<void>;
   };
 
-  // Auto-navigate authenticated users to /chat on app startup
+  // Auto-navigate authenticated users to /chat on app startup only (not during normal navigation)
   useEffect(() => {
-    console.log('🚀 [LAYOUT] Auto-nav check:', { loadingAuth, hasUser: !!user?.id });
-    if (!loadingAuth) {
-      if (user?.id) {
-        console.log('🚀 [LAYOUT] User authenticated, navigating to /chat');
-        router.replace('/chat');
-      } else {
-        console.log('🚀 [LAYOUT] No user, staying on landing page');
+    async function handleAuthNavigation() {
+      if (!loadingAuth && !hasNavigated.current) {
+        hasNavigated.current = true;
+        
+        if (user?.id) {
+          const currentRoute = segments.join('/');
+          if (!currentRoute || currentRoute === '' || currentRoute === 'index') {
+            router.replace('/dashboard');
+          }
+        }
+        
+        setTimeout(() => {
+          SplashScreen.hideAsync();
+        }, 100);
       }
     }
-  }, [loadingAuth, user]);
+    
+    handleAuthNavigation();
+  }, [loadingAuth, user, segments]);
 
   useEffect(() => {
     let purchaseUpdateSubscription: any = null;
@@ -185,10 +200,32 @@ function RootLayoutContent() {
     };
   }, []);
 
+  // Don't render app content while checking auth - keep splash visible
+  if (loadingAuth) {
+    return null;
+  }
+
   return (
-    <View style={{ flex: 1, backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF' }}>
-      <Slot />
-    </View>
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        gestureEnabled: true,
+        animation: 'slide_from_right',
+      }}
+    >
+      <Stack.Screen 
+        name="dashboard" 
+        options={{ gestureEnabled: false }}
+      />
+      <Stack.Screen 
+        name="chat"
+        options={{ gestureEnabled: true }}
+      />
+      <Stack.Screen 
+        name="decisions"
+        options={{ gestureEnabled: true }}
+      />
+    </Stack>
   );
 }
 
